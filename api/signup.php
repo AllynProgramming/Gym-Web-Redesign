@@ -25,36 +25,36 @@ $password_confirm = $_POST['password_confirm'] ?? '';
 
 // Validate all fields are filled
 if (empty($username) || empty($email) || empty($password) || empty($password_confirm)) {
-    header('Location: ../index.php?error=invalid_input');
+    header('Location: ../login.php?error=invalid_input#signup');
     exit;
 }
 
 // Validate username (3-50 characters, alphanumeric + underscore)
 if (strlen($username) < 3 || strlen($username) > 50) {
-    header('Location: ../index.php?error=invalid_input');
+    header('Location: ../login.php?error=invalid_input#signup');
     exit;
 }
 
 if (!preg_match('/^[a-zA-Z0-9_]+$/', $username)) {
-    header('Location: ../index.php?error=invalid_input');
+    header('Location: ../login.php?error=invalid_input#signup');
     exit;
 }
 
 // Validate email
 if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-    header('Location: ../index.php?error=invalid_input');
+    header('Location: ../login.php?error=invalid_input#signup');
     exit;
 }
 
 // Validate password (minimum 8 characters)
 if (strlen($password) < 8) {
-    header('Location: ../index.php?error=invalid_input');
+    header('Location: ../login.php?error=invalid_input#signup');
     exit;
 }
 
 // Check if passwords match
 if ($password !== $password_confirm) {
-    header('Location: ../index.php?error=password_mismatch');
+    header('Location: ../login.php?error=password_mismatch#signup');
     exit;
 }
 
@@ -70,7 +70,7 @@ $stmt->execute();
 $result = $stmt->get_result();
 
 if ($result->num_rows > 0) {
-    header('Location: ../index.php?error=user_exists');
+    header('Location: ../login.php?error=user_exists#signup');
     $stmt->close();
     exit;
 }
@@ -92,11 +92,11 @@ $stmt->bind_param("sssss", $username, $email, $password_hash, $first_name, $last
 if ($stmt->execute()) {
     // User created successfully
     $stmt->close();
-    header('Location: ../index.php?signup_success=1');
+    header('Location: ../login.php?signup_success=1');
     exit;
 } else {
     // Database error
-    header('Location: ../index.php?error=invalid_input');
+    header('Location: ../login.php?error=invalid_input#signup');
     $stmt->close();
     exit;
 }
