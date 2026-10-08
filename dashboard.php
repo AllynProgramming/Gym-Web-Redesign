@@ -27,7 +27,7 @@ $stmt->execute();
 $stats = $stmt->get_result()->fetch_assoc();
 $stmt->close();
 
-// Today's nutrition — used in the "Today's momentum" cards
+// Today's nutrition
 $today = date('Y-m-d');
 
 $stmt = $conn->prepare("
@@ -102,13 +102,13 @@ foreach ($allWorkouts as $workout) {
     $week = $date->format('W');
     $year = $date->format('Y');
     $weekKey = $year . '-W' . $week;
-    
+
     if (!isset($workoutsByWeek[$weekKey])) {
         $startDate = new DateTime($workout['session_date']);
         $startDate->modify('Monday this week');
         $endDate = clone $startDate;
         $endDate->modify('Sunday this week');
-        
+
         $workoutsByWeek[$weekKey] = [
             'week' => $week,
             'year' => $year,
@@ -117,15 +117,14 @@ foreach ($allWorkouts as $workout) {
             'workouts' => [],
             'totalDuration' => 0,
             'totalExercises' => 0,
-            'dayData' => [] // Store data per day for charts
+            'dayData' => []
         ];
     }
-    
+
     $workoutsByWeek[$weekKey]['workouts'][] = $workout;
     $workoutsByWeek[$weekKey]['totalDuration'] += $workout['duration_minutes'] ?? 0;
     $workoutsByWeek[$weekKey]['totalExercises'] += $workout['exercise_count'];
-    
-    // Track data by day for charts
+
     $dayOfWeek = $date->format('D');
     if (!isset($workoutsByWeek[$weekKey]['dayData'][$dayOfWeek])) {
         $workoutsByWeek[$weekKey]['dayData'][$dayOfWeek] = 0;
@@ -136,1017 +135,557 @@ foreach ($allWorkouts as $workout) {
 // Sort weeks in reverse order (newest first)
 krsort($workoutsByWeek);
 
-$latestWeekData = !empty($workoutsByWeek) ? reset($workoutsByWeek) : null;
 $weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-// Progress-ring math: given a value/goal, return the SVG stroke-dashoffset for a
-// circle of the given radius so the ring visually fills clockwise toward the goal.
-function ringOffset($value, $goal, $radius) {
-    $circumference = 2 * M_PI * $radius;
-    $pct = $goal > 0 ? max(0, min(1, $value / $goal)) : 0;
-    return $circumference - ($circumference * $pct);
+// ---- View helpers (display only) ----
+$thisWeek = $workoutsByWeek[date('Y') . '-W' . date('W')] ?? null;
+$todayName = date('D');
+$last = $recentWorkouts[0] ?? null;
+$when = '';
+if ($last) {
+    $d = (new DateTime('today'))->diff(new DateTime(date('Y-m-d', strtotime($last['session_date']))))->days;
+    $when = $d === 0 ? 'today' : ($d === 1 ? 'yesterday' : $d . ' days ago');
 }
-function ringCircumference($radius) {
-    return 2 * M_PI * $radius;
+$macros = [
+    ['key' => 'calories', 'label' => 'Calories', 'unit' => '', 'color' => 'var(--blue)'],
+    ['key' => 'protein', 'label' => 'Protein', 'unit' => ' g', 'color' => 'var(--green)'],
+    ['key' => 'carbs', 'label' => 'Carbs', 'unit' => ' g', 'color' => 'var(--yellow)'],
+    ['key' => 'fat', 'label' => 'Fat', 'unit' => ' g', 'color' => 'var(--red)'],
+];
+function gt_e($s)
+{
+    return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard - Gym Progression Tracker</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Dashboard | GymTrack</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..900&family=Newsreader:opsz,wght@6..72,400..600&display=swap"
+        rel="stylesheet">
     <style>
-        /* Theme colors — tweak these variables first to change the dashboard palette quickly. */
         :root {
-            color-scheme: dark;
-            --bg-dark: #05030a;                 /* Main page background */
-            --panel: rgba(15, 8, 28, 0.95);     /* Card / stat panel background */
-            --panel-2: rgba(20, 12, 40, 0.98);  /* Secondary panel background */
-            --text-main: #f6f7ff;              /* Main text color */
-            --text-muted: #adb2d4;             /* Secondary text color */
-            --accent: #7851A9;                 /* Royal purple accent color */
-            --accent-strong: #9b6af0;          /* Bright purple accent */
-            --accent-soft: rgba(120, 81, 169, 0.22); /* Soft purple glow */
-            --cal: #a755ff;                     /* Calories ring color */
-            --protein: #4fd6ac;                 /* Protein ring color */
-            --carbs: #ffb454;                   /* Carbs ring color */
-            --fat: #ff7ab8;                      /* Fat ring color */
-            --border: rgba(151, 109, 222, 0.22); /* Border color */
+            --bg: #ECEEEA;
+            --surface: #F7F8F5;
+            --ink: #1D2024;
+            --muted: #5B6168;
+            --rule: #C9CEC9;
+            --accent: #1F4FCC;
+            --on-accent: #fff;
+            --red: #D3302B;
+            --blue: #1F4FCC;
+            --yellow: #EDBE2B;
+            --green: #1F8A4D;
+            --head: "Archivo", Arial, sans-serif;
+            --body: "Newsreader", Georgia, serif;
+            box-sizing: border-box
         }
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+        @media (prefers-color-scheme:dark) {
+            :root {
+                --bg: #16181B;
+                --surface: #1E2125;
+                --ink: #E8EAE6;
+                --muted: #9AA0A6;
+                --rule: #34383D;
+                --accent: #6C93FF;
+                --on-accent: #0F1216;
+                --red: #E5524C;
+                --blue: #6C93FF;
+                --green: #3DB070
+            }
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: inherit
         }
 
         body {
-            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            min-height: 100vh;
-            background:
-                radial-gradient(circle at top left, rgba(120, 81, 169, 0.18), transparent 20%),
-                radial-gradient(circle at bottom right, rgba(120, 81, 169, 0.12), transparent 18%),
-                var(--bg-dark);
-            color: var(--text-main);
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font: 400 1.125rem/1.55 var(--body);
+            padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px)
         }
 
-        .navbar {
-            background: rgba(5, 5, 15, 0.96);
-            border-bottom: 1px solid rgba(151, 109, 222, 0.2);
-            color: white;
-            padding: 22px 32px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 16px;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            backdrop-filter: blur(16px);
+        :focus-visible {
+            outline: 3px solid var(--accent);
+            outline-offset: 3px
         }
 
-        .navbar h1 {
-            font-size: 1.9rem;
-            letter-spacing: 0.03em;
+        a {
+            color: inherit
         }
 
-        .nav-toggle {
-            display: none;
-            align-items: center;
-            justify-content: center;
-            width: 46px;
-            height: 46px;
-            border: 1px solid rgba(151, 109, 222, 0.3);
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.06);
-            color: #fff;
-            cursor: pointer;
-            transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
-        }
-
-        .nav-toggle:hover,
-        .nav-toggle:focus-visible {
-            background: rgba(120, 81, 169, 0.2);
-            border-color: rgba(155, 106, 240, 0.6);
-            transform: translateY(-1px);
-        }
-
-        .nav-toggle.is-active {
-            background: rgba(120, 81, 169, 0.24);
-            border-color: rgba(155, 106, 240, 0.7);
-        }
-
-        .barbell-icon {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            transform: rotate(0deg);
-        }
-
-        .barbell-icon .bar {
-            width: 18px;
-            height: 4px;
-            border-radius: 999px;
-            background: linear-gradient(90deg, #fff, #c284ff);
-            box-shadow: 0 0 12px rgba(194, 132, 255, 0.3);
-        }
-
-        .barbell-icon .plate {
-            width: 8px;
-            height: 12px;
-            border-radius: 999px;
-            background: linear-gradient(135deg, #a755ff, #7a3ecf);
-            border: 1px solid rgba(255, 255, 255, 0.28);
-            box-shadow: inset 0 0 4px rgba(255, 255, 255, 0.2);
-        }
-
-        .navbar-right {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            flex-wrap: wrap;
-            justify-content: flex-end;
-        }
-
-        .navbar-right span {
-            color: var(--text-muted);
-            font-size: 0.95rem;
-            white-space: nowrap;
-        }
-
-        .navbar-right a {
-            color: var(--text-main);
-            text-decoration: none;
-            padding: 10px 16px;
-            border-radius: 999px;
-            transition: background 0.3s ease, transform 0.2s ease;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            font-weight: 600;
-        }
-
-        .navbar-right a:hover {
-            background: rgba(120, 81, 169, 0.18);
-            transform: translateY(-1px);
-        }
-
-        .container {
-            max-width: 1240px;
+        .wrap {
+            max-width: 1120px;
             margin: 0 auto;
-            padding: 32px 24px 40px;
+            padding: 0 clamp(1.1rem, 4vw, 2.5rem)
         }
 
-        .top-panel {
-            display: grid;
-            grid-template-columns: 1.65fr 1fr;
-            gap: 24px;
-            margin-bottom: 28px;
-        }
-
-        .welcome-panel,
-        .overview-panel {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 28px;
-            padding: 30px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.22);
-        }
-
-        .welcome-panel {
-            min-height: 260px;
-            background: linear-gradient(180deg, rgba(18, 10, 37, 0.98), rgba(15, 8, 28, 0.96));
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 30px;
-            align-items: center;
-        }
-
-        .welcome-copy {
-            display: flex;
-            flex-direction: column;
-            gap: 18px;
-        }
-
-        .welcome-panel h2 {
-            color: #fff;
-            margin-bottom: 0;
-            font-size: clamp(2rem, 2.3vw, 2.6rem);
-            line-height: 1.05;
-        }
-
-        .welcome-panel p {
-            color: var(--text-muted);
-            font-size: 1rem;
-            max-width: 560px;
-            line-height: 1.8;
-        }
-
-        .welcome-chart {
-            background: rgba(120, 81, 169, 0.08);
-            border: 1px solid rgba(120, 81, 169, 0.18);
-            border-radius: 22px;
-            padding: 22px;
-            display: grid;
-            gap: 18px;
-        }
-
-        .chart-header {
+        header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 12px;
-        }
-
-        .chart-header p {
-            margin: 0;
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-        }
-
-        .chart-scale {
-            display: flex;
-            align-items: flex-end;
-            gap: 8px;
-            height: 150px;
-            padding-top: 30px; /* room for the value label above the tallest bar */
-        }
-
-        .chart-bar {
-            position: relative;
-            flex: 1 1 0;
-            min-width: 0;
-            background: linear-gradient(180deg, rgba(167, 85, 255, 0.92), rgba(120, 81, 169, 0.95));
-            border-radius: 18px 18px 6px 6px;
-            box-shadow: inset 0 2px 12px rgba(255,255,255,0.12), 0 0 18px rgba(167, 85, 255, 0.2);
-            transition: height 0.3s ease;
-        }
-
-        .chart-bar::after {
-            content: attr(data-value);
-            position: absolute;
-            top: -24px;
-            left: 50%;
-            transform: translateX(-50%);
-            color: #f4f6ff;
-            font-size: 0.85rem;
-            font-weight: 700;
-        }
-
-        .chart-labels {
-            display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            gap: 8px;
-            margin-top: 12px;
-            color: var(--text-muted);
-            font-size: 0.85rem;
-            text-align: center;
-        }
-
-        .ring-grid {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 10px;
-        }
-
-        .ring-item {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .ring-item svg {
-            width: 100%;
-            max-width: 90px;
-            transition: stroke-dashoffset 0.5s ease;
-        }
-
-        .ring-item svg circle {
-            transition: stroke-dashoffset 0.5s ease;
-        }
-
-        .ring-label {
-            font-size: 0.78rem;
-            color: var(--text-muted);
-            font-weight: 600;
-            text-align: center;
-        }
-
-        .overview-panel {
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between;
-            gap: 24px;
-        }
-
-        .overview-title {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-
-        .overview-title span {
-            font-size: 0.85rem;
-            letter-spacing: 0.18em;
-            text-transform: uppercase;
-            color: var(--accent-soft);
-        }
-
-        .overview-title h3 {
-            font-size: 1.55rem;
-            color: #fff;
-            margin: 0;
-            letter-spacing: -0.02em;
-        }
-
-        .overview-metrics {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 14px;
-        }
-
-        .metric-card {
-            background: rgba(120, 81, 169, 0.08);
-            border: 1px solid rgba(120, 81, 169, 0.18);
-            border-radius: 18px;
-            padding: 18px 16px;
-            color: #f4f6ff;
-        }
-
-        .metric-card p {
-            font-size: 0.82rem;
-            color: var(--text-muted);
-            margin-bottom: 8px;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-        }
-
-        .metric-card h4 {
-            font-size: 1.45rem;
-            margin: 0;
-            color: #fff;
-        }
-
-        .overview-actions {
-            display: grid;
-            gap: 14px;
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 18px;
-            margin-bottom: 28px;
-        }
-
-        .stat-card {
-            background: rgba(18, 10, 37, 0.96);
-            padding: 24px;
-            border-radius: 24px;
-            border: 1px solid rgba(120, 81, 169, 0.18);
-            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02), 0 16px 30px rgba(0, 0, 0, 0.20);
-            transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
-        }
-
-        .stat-card:hover {
-            transform: translateY(-4px);
-            border-color: rgba(120, 81, 169, 0.45);
-            box-shadow: 0 22px 42px rgba(120, 81, 169, 0.22);
-        }
-
-        .stat-card p {
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            margin-bottom: 10px;
-            letter-spacing: 0.03em;
-        }
-
-        .stat-card h3 {
-            color: #fff;
-            font-size: 2rem;
-            letter-spacing: -0.03em;
-        }
-
-        .action-button {
-            background: linear-gradient(135deg, #a755ff 0%, #7d3fd0 55%, #632a9f 100%);
-            color: #f8f9ff;
-            padding: 18px 22px;
-            border-radius: 22px;
-            text-align: center;
-            text-decoration: none;
-            transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
-            font-weight: 700;
-            box-shadow: 0 0 22px rgba(167, 85, 255, 0.38), 0 18px 35px rgba(95, 43, 166, 0.18);
-            border: 1px solid rgba(177, 109, 255, 0.45);
-        }
-
-        .action-button:hover {
-            transform: translateY(-2px);
-            background: linear-gradient(135deg, #c284ff 0%, #925cdd 45%, #7e39c2 100%);
-            box-shadow: 0 0 26px rgba(194, 132, 255, 0.65), 0 20px 38px rgba(126, 55, 204, 0.28);
-        }
-
-        .section-title {
-            color: #fff;
-            margin: 28px 0 16px 0;
-            font-size: 1.35rem;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-            padding-bottom: 12px;
-        }
-
-        .workout-item {
-            background: var(--panel-2);
-            padding: 18px 20px;
-            border-radius: 16px;
-            margin-bottom: 12px;
-            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
-            border: 1px solid var(--border);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .workout-item h4 {
-            color: #fff;
-            margin-bottom: 5px;
-        }
-
-        .workout-item p {
-            color: var(--text-muted);
-            font-size: 0.92rem;
-        }
-
-        .workout-item a {
-            background: rgba(124, 140, 255, 0.16);
-            color: #e6ebff;
-            padding: 8px 14px;
-            border-radius: 999px;
-            text-decoration: none;
-            transition: background 0.2s ease;
-            white-space: nowrap;
-        }
-
-        .workout-item a:hover {
-            background: rgba(124, 140, 255, 0.26);
-        }
-
-        .empty-state {
-            background: var(--panel-2);
-            padding: 34px;
-            border-radius: 18px;
-            text-align: center;
-            color: var(--text-muted);
-            border: 1px solid var(--border);
-        }
-
-        .empty-state h3 {
-            color: #fff;
-            margin-bottom: 10px;
-        }
-
-        .empty-state p {
-            margin-bottom: 18px;
-        }
-
-        .empty-state a {
-            background: var(--accent);
-            color: #f4f6ff;
-            padding: 10px 18px;
-            border-radius: 999px;
-            text-decoration: none;
-            display: inline-block;
-            font-weight: 700;
-        }
-
-        .weekly-cards-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 20px;
-            margin-bottom: 28px;
-        }
-
-        .weekly-card {
-            background: var(--panel-2);
-            border: 1px solid var(--border);
-            border-radius: 20px;
-            padding: 24px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            color: inherit;
-            display: flex;
-            flex-direction: column;
-            gap: 18px;
-        }
-
-        .weekly-card:hover {
-            background: rgba(30, 15, 50, 0.9);
-            border-color: rgba(155, 106, 240, 0.4);
-            transform: translateY(-6px);
-            box-shadow: 0 12px 28px rgba(167, 85, 255, 0.2);
-        }
-
-        .weekly-card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 12px;
-        }
-
-        .weekly-card-title {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
-        .weekly-card-title h3 {
-            color: #fff;
-            font-size: 1.25rem;
-            margin: 0;
-        }
-
-        .weekly-card-title p {
-            color: var(--text-muted);
-            font-size: 0.85rem;
-            margin: 0;
-        }
-
-        .weekly-card-stats {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 12px;
-        }
-
-        .weekly-stat {
-            background: rgba(120, 81, 169, 0.1);
-            border: 1px solid rgba(151, 109, 222, 0.2);
-            border-radius: 12px;
-            padding: 12px;
-            text-align: center;
-        }
-
-        .weekly-stat-label {
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--text-muted);
-            margin-bottom: 4px;
-        }
-
-        .weekly-stat-value {
-            font-size: 1.35rem;
-            font-weight: 700;
-            color: var(--accent-strong);
-        }
-
-        .weekly-card-days {
-            display: flex;
-            gap: 6px;
+            gap: 1rem 2rem;
             flex-wrap: wrap;
+            padding: 1.2rem 0;
+            border-bottom: 1px solid var(--rule)
         }
 
-        .day-tag {
-            padding: 6px 10px;
-            background: rgba(151, 109, 222, 0.15);
-            border: 1px solid rgba(151, 109, 222, 0.3);
-            border-radius: 8px;
-            font-size: 0.8rem;
-            font-weight: 600;
-            color: #d8b8ff;
+        .logo {
+            font: 800 1.25rem var(--head);
+            font-stretch: 112%;
+            text-decoration: none
         }
 
-        .weekly-card-chart {
+        nav {
+            display: flex;
+            gap: .3rem 1.4rem;
+            align-items: center;
+            flex-wrap: wrap;
+            font: 600 .95rem var(--head)
+        }
+
+        nav a {
+            text-decoration: none;
+            padding: .3rem 0
+        }
+
+        nav a:hover {
+            text-decoration: underline;
+            text-underline-offset: 4px
+        }
+
+        nav .who {
+            color: var(--muted);
+            font-weight: 500
+        }
+
+        .btn {
+            display: inline-block;
+            background: var(--accent);
+            color: var(--on-accent);
+            font: 700 1rem var(--head);
+            padding: .8rem 1.4rem;
+            border-radius: 6px;
+            text-decoration: none
+        }
+
+        .btn.alt {
+            background: transparent;
+            color: var(--ink);
+            box-shadow: inset 0 0 0 2px var(--ink)
+        }
+
+        .today {
+            display: grid;
+            grid-template-columns: 1.1fr 1fr;
+            gap: clamp(2rem, 6vw, 5rem);
+            align-items: center;
+            padding: clamp(2.5rem, 7vh, 4.5rem) 0
+        }
+
+        h1 {
+            font: 850 clamp(2.3rem, 6vw, 4.2rem)/1 var(--head);
+            font-stretch: 118%;
+            letter-spacing: -.025em;
+            margin: 0 0 1rem;
+            max-width: 14ch;
+            text-wrap: balance
+        }
+
+        .lede {
+            color: var(--muted);
+            font-size: 1.25rem;
+            margin: 0 0 1.6rem;
+            max-width: 30rem
+        }
+
+        .cta {
+            display: flex;
+            gap: .7rem;
+            flex-wrap: wrap
+        }
+
+        .weekbox h2,
+        .sec h2 {
+            font: 750 1.2rem var(--head);
+            margin: 0 0 .8rem
+        }
+
+        .week {
             display: grid;
             grid-template-columns: repeat(7, 1fr);
-            gap: 6px;
-            align-items: flex-end;
-            height: 120px;
+            gap: .4rem
         }
 
-        .chart-bar-wrapper {
+        .day {
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: flex-end;
+            gap: .4rem;
+            font: 600 .85rem var(--head);
+            color: var(--muted)
+        }
+
+        .day b {
+            display: grid;
+            place-items: center;
+            width: 100%;
+            aspect-ratio: 1;
+            border-radius: 6px;
+            font: 800 1.15rem var(--head);
+            box-shadow: inset 0 0 0 1.5px var(--rule);
+            color: transparent
+        }
+
+        .day.on b {
+            background: var(--accent);
+            color: var(--on-accent);
+            box-shadow: none
+        }
+
+        .day.now {
+            color: var(--ink)
+        }
+
+        .day.now b {
+            box-shadow: inset 0 0 0 2.5px var(--ink)
+        }
+
+        .day.on.now b {
+            box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--ink)
+        }
+
+        .note {
+            color: var(--muted);
+            font-size: 1rem;
+            margin: .8rem 0 0
+        }
+
+        .sec {
+            padding: 2.6rem 0;
+            border-top: 1px solid var(--rule)
+        }
+
+        .sec .head {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 1rem;
+            flex-wrap: wrap;
+            margin-bottom: .6rem
+        }
+
+        .sec .head a {
+            font: 600 .95rem var(--head)
+        }
+
+        .figs {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem 2rem
+        }
+
+        .figs div {
+            border-top: 2px solid var(--ink);
+            padding-top: .5rem
+        }
+
+        .figs dt {
+            font: 600 .9rem var(--head);
+            color: var(--muted)
+        }
+
+        .figs dd {
+            margin: 0;
+            font: 800 2.4rem/1.1 var(--head);
+            font-stretch: 112%;
+            font-variant-numeric: tabular-nums
+        }
+
+        .mac {
+            display: grid;
+            grid-template-columns: 7rem 1fr 11rem;
+            gap: 1rem;
+            align-items: center;
+            padding: .75rem 0;
+            border-bottom: 1px solid var(--rule)
+        }
+
+        .mac span {
+            font: 600 1rem var(--head)
+        }
+
+        .mac em {
+            font-style: normal;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            color: var(--muted)
+        }
+
+        .mac em b {
+            color: var(--ink);
+            font-family: var(--head)
+        }
+
+        .track {
+            height: 12px;
+            background: var(--surface);
+            border-radius: 6px;
+            box-shadow: inset 0 0 0 1px var(--rule);
+            overflow: hidden
+        }
+
+        .track i {
+            display: block;
             height: 100%;
-            gap: 4px;
+            background: var(--c);
+            border-radius: 6px
         }
 
-        .chart-bar-item {
+        .scroll {
+            overflow-x: auto
+        }
+
+        table {
             width: 100%;
-            background: linear-gradient(180deg, rgba(167, 85, 255, 0.92), rgba(120, 81, 169, 0.95));
-            border-radius: 4px 4px 0 0;
-            min-height: 8px;
-            transition: all 0.2s ease;
+            border-collapse: collapse;
+            font-variant-numeric: tabular-nums;
+            min-width: 34rem
         }
 
-        .chart-bar-item:hover {
-            background: linear-gradient(180deg, #c284ff 0%, #9b6af0 100%);
-            box-shadow: 0 0 12px rgba(194, 132, 255, 0.4);
+        th {
+            text-align: left;
+            font: 600 .85rem var(--head);
+            color: var(--muted);
+            padding: .4rem .8rem .4rem 0;
+            border-bottom: 2px solid var(--ink)
         }
 
-        .chart-bar-empty {
-            width: 100%;
-            background: rgba(151, 109, 222, 0.08);
-            border-radius: 4px;
-            height: 8px;
+        td {
+            padding: .7rem .8rem .7rem 0;
+            border-bottom: 1px solid var(--rule)
         }
 
-        .chart-day-label {
-            font-size: 0.7rem;
-            color: var(--text-muted);
-            text-align: center;
-            margin-top: 4px;
-            font-weight: 600;
+        th.n,
+        td.n {
+            text-align: right
         }
 
-        @media (max-width: 768px) {
-            .stats-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .workout-item {
-                flex-direction: column;
-                text-align: center;
-            }
-            .top-panel {
-                grid-template-columns: 1fr;
-            }
-
-            .welcome-panel,
-            .overview-panel {
-                padding: 24px;
-            }
-
-            .welcome-chart {
-                gap: 14px;
-            }
-
-            .overview-metrics {
-                grid-template-columns: 1fr;
-            }
-
-            .overview-actions {
-                grid-template-columns: 1fr;
-            }
-
-            .overview-actions a {
-                width: 100%;
-            }
-
-            .chart-scale { height: 120px; }
-
-            .workout-item a {
-                width: 100%;
-                white-space: normal;
-            }
-
-            .section-title {
-                font-size: 1.2rem;
-            }
-
-            .weekly-cards-grid {
-                grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-                gap: 16px;
-            }
-
-            .weekly-card-chart {
-                height: 100px;
-            }
+        td a {
+            font: 700 1rem var(--head)
         }
 
-        @media (max-width: 480px) {
-            .navbar { padding: 14px 18px; }
+        .dots {
+            display: flex;
+            gap: 3px
+        }
 
-            .container { padding: 20px 14px 40px; }
+        .dots i {
+            width: 10px;
+            height: 10px;
+            border-radius: 2px;
+            box-shadow: inset 0 0 0 1.5px var(--rule)
+        }
 
-            .welcome-panel { grid-template-columns: 1fr !important; padding: 18px; }
-            .ring-grid { grid-template-columns: repeat(2, 1fr); gap: 16px; }
+        .dots i.on {
+            background: var(--accent);
+            box-shadow: none
+        }
 
-            .welcome-chart { 
-                padding: 14px; 
-                border-radius: 14px;
-                gap: 12px;
-                position: relative;
-            }
-            .chart-header {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 8px;
-            }
-            .chart-header p { font-size: 0.75rem; }
-            .chart-header strong { font-size: 1rem; }
-            .chart-header span { font-size: 0.8rem; }
-            .chart-scale { height: 100px; gap: 5px; padding-top: 26px; }
-            .chart-bar::after { font-size: 0.75rem; top: -20px; }
-            .chart-labels { gap: 5px; font-size: 0.7rem; }
+        .empty {
+            background: var(--surface);
+            box-shadow: 0 0 0 1px var(--rule);
+            border-radius: 10px;
+            padding: 1.6rem
+        }
 
-            .overview-panel { padding: 18px; }
-            .overview-actions a { font-size: 0.95rem; padding: 12px; }
+        .empty h3 {
+            font: 750 1.2rem var(--head);
+            margin: 0 0 .3rem
+        }
 
-            .workout-item { padding: 14px; }
-            .workout-item h4 { font-size: 1rem; }
-            .workout-item p { font-size: 0.9rem; }
+        .empty p {
+            color: var(--muted);
+            margin: 0 0 1rem
+        }
 
-            .section-title { font-size: 1rem; }
+        footer {
+            padding: 1rem 0 3rem
+        }
 
-            .weekly-cards-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .weekly-card {
-                padding: 18px;
-            }
-
-            .weekly-card-title h3 {
-                font-size: 1.1rem;
+        @media (max-width:820px) {
+            .today {
+                grid-template-columns: 1fr
             }
 
-            .weekly-card-chart {
-                height: 80px;
-                gap: 4px;
+            .mac {
+                grid-template-columns: 1fr auto;
+                gap: .3rem 1rem
+            }
+
+            .mac .track {
+                grid-column: 1/-1;
+                order: 3
+            }
+
+            .figs dd {
+                font-size: 1.8rem
             }
         }
 
-        /* ---------- Mobile hamburger menu (matches log-workout.php / under-development.php) ---------- */
-        @media (max-width: 860px) {
-            .nav-toggle {
-                display: inline-flex;
-            }
-
-            .navbar-right {
-                display: none;
-                position: absolute;
-                top: calc(100% + 10px);
-                right: 20px;
-                left: 20px;
-                flex-direction: column;
-                align-items: stretch;
-                padding: 14px;
-                background: rgba(5, 5, 15, 0.98);
-                border: 1px solid rgba(151, 109, 222, 0.24);
-                border-radius: 18px;
-                box-shadow: 0 16px 32px rgba(0, 0, 0, 0.24);
-            }
-
-            .navbar-right.is-open {
-                display: flex;
-            }
-
-            .navbar-right span {
-                width: 100%;
-                text-align: center;
-                padding: 8px 0 12px;
-                margin-bottom: 4px;
-                border-bottom: 1px solid rgba(151, 109, 222, 0.18);
-            }
-
-            .navbar-right a {
-                width: 100%;
-                text-align: center;
-                justify-content: center;
-                border-radius: 999px;
-                padding: 12px 16px;
+        @media (max-width:480px) {
+            .figs {
+                grid-template-columns: 1fr
             }
         }
     </style>
 </head>
-<body>
-    <nav class="navbar">
-        <h1> Personal GymTracker </h1>
-        <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation" type="button">
-            <span class="barbell-icon" aria-hidden="true">
-                <span class="plate"></span>
-                <span class="bar"></span>
-                <span class="plate"></span>
-            </span>
-        </button>
-        <div class="navbar-right" id="navMenu">
-            <span>Welcome, <?php echo htmlspecialchars($user['username']); ?>!</span>
-            <a href="nutrition.php">Nutrition</a>
-            <a href="profile.php">Profile</a>
-            <a href="friends.php">Friends</a>
-            <a href="api/logout.php">Logout</a>
-        </div>
-    </nav>
 
-    <div class="container">
-        <div class="top-panel">
-            <section class="welcome-panel">
-                <div class="welcome-chart">
-                    <div class="chart-header">
-                        <div>
-                            <p>Nutrition</p>
-                            <strong style="color:#fff; font-size:1.1rem;">Today's intake</strong>
-                        </div>
+<body>
+    <div class="wrap">
+        <header>
+            <a class="logo" href="dashboard.php">GymTrack</a>
+            <nav aria-label="Main">
+                <span class="who"><?php echo gt_e($user['username']); ?></span>
+                <a href="nutrition.php">Nutrition</a>
+                <a href="profile.php">Profile</a>
+                <a href="friends.php">Friends</a>
+                <a href="api/logout.php">Log out</a>
+            </nav>
+        </header>
+
+        <main>
+            <section class="today">
+                <div>
+                    <?php if ($last): ?>
+                        <h1>Your last session was <?php echo gt_e($when); ?>.</h1>
+                        <p class="lede"><?php echo gt_e($last['plan_name'] ?: 'Workout'); ?>:
+                            <?php echo (int) $last['exercise_count']; ?>
+                            exercises<?php echo $last['duration_minutes'] ? ', ' . (int) $last['duration_minutes'] . ' min' : ''; ?>.
+                            Beat it today.</p>
+                    <?php else: ?>
+                        <h1>Log your first session.</h1>
+                        <p class="lede">Your sets, records and weekly progress will show up here.</p>
+                    <?php endif; ?>
+                    <div class="cta">
+                        <a class="btn" href="log-workout.php">Log workout</a>
+                        <a class="btn alt" href="progression.php">View progression</a>
+                        <a class="btn alt" href="workouts.php">My workouts</a>
                     </div>
-                    <div class="ring-grid">
-                        <?php
-                            $radius = 36;
-                            $circumference = ringCircumference($radius);
-                            $ringMacros = [
-                                ['key' => 'calories', 'label' => 'Calories', 'unit' => '', 'color' => 'var(--cal)'],
-                                ['key' => 'protein', 'label' => 'Protein', 'unit' => 'g', 'color' => 'var(--protein)'],
-                                ['key' => 'carbs', 'label' => 'Carbs', 'unit' => 'g', 'color' => 'var(--carbs)'],
-                                ['key' => 'fat', 'label' => 'Fat', 'unit' => 'g', 'color' => 'var(--fat)'],
-                            ];
-                        ?>
-                        <?php foreach ($ringMacros as $m): ?>
-                            <?php
-                                $value = round($nutritionToday[$m['key']]);
-                                $goal = $nutritionGoals[$m['key']];
-                                $offset = ringOffset($value, $goal, $radius);
-                            ?>
-                            <div class="ring-item">
-                                <svg viewBox="0 0 90 90">
-                                    <circle cx="45" cy="45" r="<?php echo $radius; ?>" stroke="rgba(255,255,255,0.08)" stroke-width="9" fill="none" />
-                                    <circle cx="45" cy="45" r="<?php echo $radius; ?>" stroke="<?php echo $m['color']; ?>" stroke-width="9" fill="none"
-                                            stroke-dasharray="<?php echo $circumference; ?>"
-                                            stroke-dashoffset="<?php echo $offset; ?>"
-                                            stroke-linecap="round"
-                                            transform="rotate(-90 45 45)" />
-                                    <text x="45" y="42" text-anchor="middle" fill="#fff" font-size="15" font-weight="700"><?php echo $value; ?></text>
-                                    <text x="45" y="57" text-anchor="middle" fill="rgba(173,178,212,0.9)" font-size="9"><?php echo $m['unit'] ? "/ {$goal}{$m['unit']}" : "/ {$goal}"; ?></text>
-                                </svg>
-                                <span class="ring-label"><?php echo $m['label']; ?></span>
+                </div>
+                <div class="weekbox">
+                    <h2>This week</h2>
+                    <div class="week">
+                        <?php foreach ($weekDays as $day):
+                            $n = $thisWeek['dayData'][$day] ?? 0; ?>
+                            <div
+                                class="day<?php echo $n > 0 ? ' on' : ''; ?><?php echo $day === $todayName ? ' now' : ''; ?>">
+                                <b
+                                    title="<?php echo $n; ?> exercises"><?php echo $n > 0 ? $n : ''; ?></b><?php echo gt_e($day); ?>
                             </div>
                         <?php endforeach; ?>
                     </div>
-                </div>
-                <div class="welcome-chart">
-                    <div class="chart-header">
-                        <div>
-                            <p>Volume trend</p>
-                            <strong style="color:#fff; font-size:1.1rem;">
-                                <?php if ($latestWeekData): ?>
-                                    Week <?php echo htmlspecialchars($latestWeekData['week']); ?> · <?php echo htmlspecialchars(date('M j', strtotime($latestWeekData['startDate']))); ?>–<?php echo htmlspecialchars(date('M j', strtotime($latestWeekData['endDate']))); ?>
-                                <?php else: ?>
-                                    No workouts logged yet
-                                <?php endif; ?>
-                            </strong>
-                        </div>
-                        <?php if ($latestWeekData): ?>
-                            <span style="color:#c284ff; font-size:0.95rem; font-weight:700;"><?php echo $latestWeekData['totalExercises']; ?> exercises</span>
-                        <?php endif; ?>
-                    </div>
-                    <div class="chart-scale">
-                        <?php if ($latestWeekData): ?>
-                            <?php
-                                $maxLatestWeekValue = max(array_values($latestWeekData['dayData'])) ?: 1;
-                                $maxBarPx = 120; // matches .chart-scale height minus the label/padding allowance
-                                foreach ($weekDays as $day):
-                                    $dayValue = $latestWeekData['dayData'][$day] ?? 0;
-                                    $barPx = $dayValue > 0 ? max(14, round(($dayValue / $maxLatestWeekValue) * $maxBarPx)) : 0;
-                            ?>
-                                <div class="chart-bar" data-value="<?php echo $dayValue; ?>" style="height: <?php echo $barPx; ?>px;"></div>
-                            <?php endforeach; ?>
-                        <?php else: ?>
-                            <?php for ($i = 0; $i < 7; $i++): ?>
-                                <div class="chart-bar" data-value="0" style="height: 0px;"></div>
-                            <?php endfor; ?>
-                        <?php endif; ?>
-                    </div>
-                    <div class="chart-labels">
-                        <?php foreach ($weekDays as $day): ?>
-                            <span><?php echo htmlspecialchars($day); ?></span>
-                        <?php endforeach; ?>
-                    </div>
+                    <p class="note">
+                        <?php echo $thisWeek ? count($thisWeek['workouts']) . ' session' . (count($thisWeek['workouts']) === 1 ? '' : 's') . ' so far. Numbers show exercises per day.' : 'No sessions yet this week.'; ?>
+                    </p>
                 </div>
             </section>
 
-            <aside class="overview-panel">
-                <div class="overview-title">
-                    <span>Dashboard overview</span>
-                    <h3>Today’s momentum</h3>
-                </div>
-
-                <div class="overview-metrics">
-                    <div class="metric-card">
-                        <p>Calories today</p>
-                        <h4><?php echo round($nutritionToday['calories']); ?> <span style="font-size:0.55em; color:var(--text-muted); font-weight:600;">/ <?php echo $nutritionGoals['calories']; ?></span></h4>
+            <section class="sec">
+                <dl class="figs" style="margin:0">
+                    <div>
+                        <dt>Workouts logged</dt>
+                        <dd><?php echo (int) ($stats['total_sessions'] ?? 0); ?></dd>
                     </div>
-                    <div class="metric-card">
-                        <p>Protein today</p>
-                        <h4><?php echo round($nutritionToday['protein']); ?>g <span style="font-size:0.55em; color:var(--text-muted); font-weight:600;">/ <?php echo $nutritionGoals['protein']; ?>g</span></h4>
+                    <div>
+                        <dt>Different exercises</dt>
+                        <dd><?php echo (int) ($stats['unique_exercises'] ?? 0); ?></dd>
                     </div>
-                    <div class="metric-card">
-                        <p>Carbs today</p>
-                        <h4><?php echo round($nutritionToday['carbs']); ?>g <span style="font-size:0.55em; color:var(--text-muted); font-weight:600;">/ <?php echo $nutritionGoals['carbs']; ?>g</span></h4>
+                    <div>
+                        <dt>Last workout</dt>
+                        <dd><?php echo !empty($stats['last_workout']) ? gt_e(date('M j', strtotime($stats['last_workout']))) : 'None yet'; ?>
+                        </dd>
                     </div>
+                </dl>
+            </section>
+
+            <section class="sec">
+                <div class="head">
+                    <h2>Nutrition today</h2><a href="nutrition.php">Log food</a>
                 </div>
-
-                <div class="overview-actions">
-                    <a href="log-workout.php" class="action-button"> Log New Workout</a>
-                    <a href="progression.php" class="action-button"> View Progression</a>
-                    <a href="workouts.php" class="action-button"> My Workouts</a>
-                </div>
-            </aside>
-        </div>
-
-        <div class="stats-grid">
-            <div class="stat-card">
-                <p>Workout count</p>
-                <h3><?php echo $stats['total_sessions'] ?? 0; ?></h3>
-            </div>
-            <div class="stat-card">
-                <p>Different moves</p>
-                <h3><?php echo $stats['unique_exercises'] ?? 0; ?></h3>
-            </div>
-            <div class="stat-card">
-                <p>Last active</p>
-                <h3><?php echo $stats['last_workout'] ? date('M d', strtotime($stats['last_workout'])) : 'Never'; ?></h3>
-            </div>
-        </div>
-
-        <h2 class="section-title">Weekly Breakdown</h2>
-
-        <?php if (!empty($workoutsByWeek)): ?>
-            <div class="weekly-cards-grid">
-                <?php foreach ($workoutsByWeek as $weekKey => $weekData): ?>
-                    <?php
-                        // Calculate max value for chart scaling
-                        $maxExercises = max(array_values($weekData['dayData'])) ?: 1;
-                        // Days of week in order
-                        $daysOrder = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-                    ?>
-                    <a href="workouts.php#week-<?php echo htmlspecialchars($weekKey); ?>" class="weekly-card">
-                        <div class="weekly-card-header">
-                            <div class="weekly-card-title">
-                                <h3>Week <?php echo htmlspecialchars($weekData['week']); ?></h3>
-                                <p><?php 
-                                    $startDate = new DateTime($weekData['startDate']);
-                                    $endDate = new DateTime($weekData['endDate']);
-                                    echo $startDate->format('M j') . ' - ' . $endDate->format('M j');
-                                ?></p>
-                            </div>
-                        </div>
-
-                        <div class="weekly-card-chart">
-                            <?php foreach ($daysOrder as $day): ?>
-                                <div class="chart-bar-wrapper">
-                                    <?php if (isset($weekData['dayData'][$day]) && $weekData['dayData'][$day] > 0): ?>
-                                        <?php $percentage = ($weekData['dayData'][$day] / $maxExercises) * 100; ?>
-                                        <div class="chart-bar-item" style="height: <?php echo max(20, $percentage); ?>%;" title="<?php echo $weekData['dayData'][$day]; ?> exercises"></div>
-                                    <?php else: ?>
-                                        <div class="chart-bar-empty"></div>
-                                    <?php endif; ?>
-                                    <span class="chart-day-label"><?php echo htmlspecialchars($day); ?></span>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-
-                        <div class="weekly-card-stats">
-                            <div class="weekly-stat">
-                                <div class="weekly-stat-label">Sessions</div>
-                                <div class="weekly-stat-value"><?php echo count($weekData['workouts']); ?></div>
-                            </div>
-                            <div class="weekly-stat">
-                                <div class="weekly-stat-label">Exercises</div>
-                                <div class="weekly-stat-value"><?php echo $weekData['totalExercises']; ?></div>
-                            </div>
-                            <div class="weekly-stat">
-                                <div class="weekly-stat-label">Duration</div>
-                                <div class="weekly-stat-value"><?php echo $weekData['totalDuration']; ?> min</div>
-                            </div>
-                            <div class="weekly-stat">
-                                <div class="weekly-stat-label">Avg/Day</div>
-                                <div class="weekly-stat-value"><?php echo ceil($weekData['totalDuration'] / count($weekData['workouts'])); ?> min</div>
-                            </div>
-                        </div>
-                    </a>
+                <?php foreach ($macros as $m):
+                    $v = round($nutritionToday[$m['key']]);
+                    $g = (float) $nutritionGoals[$m['key']];
+                    $pct = $g > 0 ? max(0, min(100, $v / $g * 100)) : 0; ?>
+                    <div class="mac">
+                        <span><?php echo gt_e($m['label']); ?></span>
+                        <div class="track" role="img"
+                            aria-label="<?php echo gt_e($m['label'] . ': ' . $v . ' of ' . $g . $m['unit']); ?>"><i
+                                style="--c:<?php echo $m['color']; ?>;width:<?php echo round($pct); ?>%"></i></div>
+                        <em><b><?php echo number_format($v); ?></b> of
+                            <?php echo number_format($g) . gt_e($m['unit']); ?></em>
+                    </div>
                 <?php endforeach; ?>
-            </div>
-        <?php else: ?>
-            <div class="empty-state">
-                <h3>No workouts yet</h3>
-                <p>Start tracking your fitness journey today!</p>
-                <a href="log-workout.php">Log Your First Workout</a>
-            </div>
-        <?php endif; ?>
+            </section>
+
+            <section class="sec">
+                <div class="head">
+                    <h2>Weekly history</h2><a href="workouts.php">All workouts</a>
+                </div>
+                <?php if (!empty($workoutsByWeek)): ?>
+                    <div class="scroll">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Week</th>
+                                    <th>Days trained</th>
+                                    <th class="n">Sessions</th>
+                                    <th class="n">Exercises</th>
+                                    <th class="n">Minutes</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($workoutsByWeek as $weekKey => $w): ?>
+                                    <tr>
+                                        <td><a href="workouts.php#week-<?php echo gt_e($weekKey); ?>"><?php echo gt_e(date('M j', strtotime($w['startDate']))); ?>
+                                                to <?php echo gt_e(date('M j', strtotime($w['endDate']))); ?></a></td>
+                                        <td>
+                                            <div class="dots"
+                                                aria-label="Trained on <?php echo gt_e(implode(', ', array_keys(array_filter($w['dayData'])))); ?>">
+                                                <?php foreach ($weekDays as $day): ?><i
+                                                        class="<?php echo !empty($w['dayData'][$day]) ? 'on' : ''; ?>"
+                                                        title="<?php echo gt_e($day); ?>"></i><?php endforeach; ?></div>
+                                        </td>
+                                        <td class="n"><?php echo count($w['workouts']); ?></td>
+                                        <td class="n"><?php echo (int) $w['totalExercises']; ?></td>
+                                        <td class="n"><?php echo (int) $w['totalDuration']; ?></td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php else: ?>
+                    <div class="empty">
+                        <h3>No workouts yet</h3>
+                        <p>Log a session and your weeks will build up here.</p>
+                        <a class="btn" href="log-workout.php">Log your first workout</a>
+                    </div>
+                <?php endif; ?>
+            </section>
+        </main>
+        <footer></footer>
     </div>
-
-    <script>
-        // Mobile nav toggle (hamburger / barbell button)
-        const navToggle = document.getElementById('navToggle');
-        const navMenu = document.getElementById('navMenu');
-
-        if (navToggle && navMenu) {
-            navToggle.addEventListener('click', function () {
-                navMenu.classList.toggle('is-open');
-                navToggle.classList.toggle('is-active');
-            });
-
-            document.addEventListener('click', function (event) {
-                if (!navToggle.contains(event.target) && !navMenu.contains(event.target)) {
-                    navMenu.classList.remove('is-open');
-                    navToggle.classList.remove('is-active');
-                }
-            });
-        }
-    </script>
 </body>
+
 </html>
