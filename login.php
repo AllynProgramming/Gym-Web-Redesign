@@ -48,6 +48,7 @@ if (!empty($_GET['error']) && isset($errors[$_GET['error']])) {
             --accent: #1F4FCC;
             --on-accent: #fff;
             --err: #B3261E;
+            --focus: #1F4FCC;
             --head: "Archivo", Arial, sans-serif;
             --body: "Newsreader", Georgia, serif;
             box-sizing: border-box
@@ -62,6 +63,7 @@ if (!empty($_GET['error']) && isset($errors[$_GET['error']])) {
                 --rule: #34383D;
                 --accent: #6C93FF;
                 --on-accent: #0F1216;
+                --focus: #6C93FF;
                 --err: #FF8A80
             }
         }
@@ -86,7 +88,7 @@ if (!empty($_GET['error']) && isset($errors[$_GET['error']])) {
         }
 
         :focus-visible {
-            outline: 3px solid var(--accent);
+            outline: 3px solid var(--focus);
             outline-offset: 3px
         }
 
@@ -100,7 +102,8 @@ if (!empty($_GET['error']) && isset($errors[$_GET['error']])) {
         }
 
         header {
-            padding: 1.4rem 0
+            padding: 1.4rem 0;
+            border-bottom: 1px solid var(--rule)
         }
 
         .logo {
@@ -113,50 +116,54 @@ if (!empty($_GET['error']) && isset($errors[$_GET['error']])) {
         main {
             flex: 1;
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: clamp(2rem, 6vw, 5rem);
+            grid-template-columns: minmax(0, .9fr) minmax(24rem, 1.1fr);
+            gap: clamp(2rem, 7vw, 7rem);
             align-items: center;
-            padding: 2rem 0 4rem
+            padding: clamp(3rem, 8vh, 6rem) 0 5rem
         }
 
         h1 {
-            font: 850 clamp(2.4rem, 6vw, 4.4rem)/1 var(--head);
+            font: 850 clamp(2.5rem, 6vw, 4.7rem)/.96 var(--head);
             font-stretch: 118%;
             letter-spacing: -.025em;
             margin: 0 0 1rem;
-            max-width: 11ch
+            max-width: 10ch;
+            text-wrap: balance
         }
 
         .lede {
             color: var(--muted);
-            font-size: 1.25rem;
+            font-size: 1.28rem;
+            line-height: 1.45;
             max-width: 26rem;
             margin: 0
         }
 
         .sheet {
             background: var(--surface);
-            border-radius: 10px;
-            padding: 1.4rem 1.5rem 1.6rem;
-            box-shadow: 0 0 0 1px var(--rule)
+            border: 1px solid var(--rule);
+            border-top: 7px solid var(--accent);
+            border-radius: 2px;
+            padding: clamp(1.5rem, 4vw, 2.4rem);
+            box-shadow: 10px 10px 0 rgba(23, 33, 43, .10)
         }
 
         .tabs {
             display: flex;
-            gap: 1.4rem;
-            border-bottom: 2px solid var(--ink);
-            margin-bottom: .4rem
+            gap: 1.6rem;
+            border-bottom: 1px solid var(--rule);
+            margin-bottom: 1.2rem
         }
 
         .tabs button {
-            font: 700 1rem var(--head);
+            font: 700 1.05rem var(--head);
             background: none;
             border: 0;
             color: var(--muted);
-            padding: .5rem 0;
+            padding: .35rem 0 .75rem;
             cursor: pointer;
-            margin-bottom: -2px;
-            border-bottom: 4px solid transparent
+            margin-bottom: -1px;
+            border-bottom: 3px solid transparent
         }
 
         .tabs button[aria-selected="true"] {
@@ -166,30 +173,32 @@ if (!empty($_GET['error']) && isset($errors[$_GET['error']])) {
 
         .field {
             display: grid;
-            grid-template-columns: 8.5rem 1fr;
-            align-items: center;
-            border-bottom: 1px solid var(--rule);
-            gap: .6rem
+            gap: .35rem;
+            margin-top: 1rem
         }
 
         .field label {
-            font: 600 .9rem var(--head);
-            color: var(--muted)
+            font: 700 .82rem var(--head);
+            color: var(--ink)
         }
 
         .field input {
-            font: 400 1.1rem var(--body);
+            font: 400 1.12rem var(--body);
             color: var(--ink);
-            background: transparent;
-            border: 0;
-            padding: .85rem 0;
+            background: var(--bg);
+            border: 2px solid var(--rule);
+            border-radius: 2px;
+            padding: .78rem .8rem;
             width: 100%;
-            min-width: 0
+            min-width: 0;
+            min-height: 3.1rem;
+            transition: border-color .15s ease, background-color .15s ease
         }
 
-        .field input:focus-visible {
-            outline-offset: -2px;
-            border-radius: 4px
+        .field input:focus {
+            outline: none;
+            border-color: var(--accent);
+            background: var(--surface)
         }
 
         .msg {
@@ -211,14 +220,64 @@ if (!empty($_GET['error']) && isset($errors[$_GET['error']])) {
 
         .btn {
             width: 100%;
-            margin-top: 1rem;
+            margin-top: 1.35rem;
             background: var(--accent);
             color: var(--on-accent);
-            font: 700 1rem var(--head);
-            padding: .9rem 1.4rem;
+            font: 800 1.05rem var(--head);
+            padding: 1rem 1.4rem;
             border: 0;
-            border-radius: 6px;
-            cursor: pointer
+            border-radius: 2px;
+            cursor: pointer;
+            transition: transform .15s ease, filter .15s ease
+        }
+
+        .btn:hover {
+            filter: brightness(1.08);
+            transform: translateY(-2px)
+        }
+
+        .oauth-divider {
+            display: flex;
+            align-items: center;
+            gap: .75rem;
+            margin: 1.25rem 0 1rem;
+            color: var(--muted);
+            font: 600 .78rem var(--head)
+        }
+
+        .oauth-divider::before,
+        .oauth-divider::after {
+            content: "";
+            height: 1px;
+            flex: 1;
+            background: var(--rule)
+        }
+
+        .google-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: .65rem;
+            width: 100%;
+            min-height: 3.1rem;
+            padding: .8rem 1.2rem;
+            border: 2px solid var(--rule);
+            border-radius: 2px;
+            background: var(--surface);
+            color: var(--ink);
+            font: 700 1rem var(--head);
+            text-decoration: none;
+            transition: border-color .15s ease, background-color .15s ease
+        }
+
+        .google-btn:hover {
+            border-color: var(--ink);
+            background: var(--bg)
+        }
+
+        .google-mark {
+            color: #4285F4;
+            font: 800 1.15rem Arial, sans-serif
         }
 
         [hidden] {
@@ -231,17 +290,41 @@ if (!empty($_GET['error']) && isset($errors[$_GET['error']])) {
                 align-items: start
             }
 
-            .field {
-                grid-template-columns: 1fr;
-                gap: 0
+            main {
+                padding-top: 3rem
+            }
+        }
+
+        @media (max-width:520px) {
+            .wrap {
+                padding-left: 1rem;
+                padding-right: 1rem
             }
 
-            .field label {
-                padding-top: .7rem
+            main {
+                gap: 2.5rem;
+                padding-bottom: 3rem
             }
 
-            .field input {
-                padding: .4rem 0 .8rem
+            .sheet {
+                padding: 1.25rem;
+                box-shadow: 6px 6px 0 rgba(23, 33, 43, .10)
+            }
+
+            .tabs {
+                gap: 1rem
+            }
+
+            .tabs button {
+                font-size: .95rem
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+
+            .field input,
+            .btn {
+                transition: none
             }
         }
     </style>
@@ -272,6 +355,11 @@ if (!empty($_GET['error']) && isset($errors[$_GET['error']])) {
                     <div class="field"><label for="l-pass">Password</label><input id="l-pass" name="password"
                             type="password" autocomplete="current-password" required></div>
                     <button class="btn" type="submit">Log in</button>
+                    <div class="oauth-divider" aria-hidden="true">or</div>
+                    <a class="google-btn" href="api/google-login.php">
+                        <span class="google-mark" aria-hidden="true">G</span>
+                        Continue with Google
+                    </a>
                 </form>
 
                 <form id="f-signup" role="tabpanel" aria-labelledby="t-signup" method="post" action="api/signup.php"
