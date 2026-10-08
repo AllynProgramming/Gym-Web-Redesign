@@ -1,8 +1,7 @@
 <?php
 // log-workout.php
-// Form to log a new workout session. Each exercise gets its own card with as
-// many individual set rows as needed (weight + reps can differ set to set,
-// and a set can be flagged as a warmup).
+// Form to log (or edit) a workout session. Each exercise gets its own sheet with as
+// many set rows as needed (weight + reps can differ set to set, and a set can be a warm-up).
 
 require_once __DIR__ . '/api/includes/db.php';
 require_once __DIR__ . '/api/includes/auth.php';
@@ -12,22 +11,20 @@ requireLogin();
 $userId = getUserId();
 $user = getUserInfo($conn, $userId);
 
-// Pull distinct plan names this user has used before, so they can quickly reuse a custom split
+// Distinct plan names this user has used before, so they can quickly reuse a custom split
 $stmt = $conn->prepare("SELECT DISTINCT plan_name FROM workout_plans WHERE user_id = ? ORDER BY plan_name");
 $stmt->bind_param("i", $userId);
 $stmt->execute();
 $planNames = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
-// Common preset splits shown in the dropdown by default
 $commonSplits = ['Upper Day', 'Lower Day', 'Push Day', 'Pull Day', 'Leg Day', 'Full Body', 'Rest / Recovery'];
 
-// Only show past custom plans that aren't already covered by the common presets above
 $customPlanNames = array_filter($planNames, function ($p) use ($commonSplits) {
     return !in_array($p['plan_name'], $commonSplits, true);
 });
 
-// Default to browser current date on initial load, but preserve an explicit query-date or edit-mode value.
+// Default to the browser's date on a new log, but keep an explicit query-date or edit-mode value.
 $selectedSessionDate = $_GET['session_date'] ?? '';
 $hasExplicitSessionDate = isset($_GET['session_date']);
 $editWorkoutId = isset($_GET['workout_id']) ? (int) $_GET['workout_id'] : null;
@@ -89,8 +86,7 @@ if ($editWorkoutId) {
     }
 }
 
-// Exercise name suggestions: the user's own history first, topped up with common lifts
-// they haven't logged yet, so the datalist is useful from day one.
+// Exercise name suggestions: the user's own history first, topped up with common lifts.
 $stmt = $conn->prepare("
     SELECT DISTINCT e.exercise_name
     FROM exercises e
@@ -104,11 +100,31 @@ $loggedExerciseNames = array_column($stmt->get_result()->fetch_all(MYSQLI_ASSOC)
 $stmt->close();
 
 $commonExercises = [
-    'Barbell Squat', 'Deadlift', 'Bench Press', 'Incline Bench Press', 'Overhead Press',
-    'Barbell Row', 'Pull-Up', 'Lat Pulldown', 'Leg Press', 'Romanian Deadlift',
-    'Bulgarian Split Squat', 'Hip Thrust', 'Bicep Curl', 'Tricep Pushdown', 'Lateral Raise',
-    'Dumbbell Shoulder Press', 'Cable Row', 'Chest Fly', 'Leg Curl', 'Leg Extension',
-    'Calf Raise', 'Plank', 'Hanging Leg Raise', 'Face Pull', 'Hip Abduction',
+    'Barbell Squat',
+    'Deadlift',
+    'Bench Press',
+    'Incline Bench Press',
+    'Overhead Press',
+    'Barbell Row',
+    'Pull-Up',
+    'Lat Pulldown',
+    'Leg Press',
+    'Romanian Deadlift',
+    'Bulgarian Split Squat',
+    'Hip Thrust',
+    'Bicep Curl',
+    'Tricep Pushdown',
+    'Lateral Raise',
+    'Dumbbell Shoulder Press',
+    'Cable Row',
+    'Chest Fly',
+    'Leg Curl',
+    'Leg Extension',
+    'Calf Raise',
+    'Plank',
+    'Hanging Leg Raise',
+    'Face Pull',
+    'Hip Abduction',
 ];
 
 $exerciseSuggestions = array_unique(array_merge($loggedExerciseNames, $commonExercises));
@@ -116,1097 +132,866 @@ sort($exerciseSuggestions, SORT_NATURAL | SORT_FLAG_CASE);
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Log Workout - GymTrack</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title><?php echo $editWorkoutId ? 'Edit workout' : 'Log workout'; ?> | GymTrack</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..900&family=Newsreader:opsz,wght@6..72,400..600&display=swap"
+        rel="stylesheet">
     <style>
         :root {
-            color-scheme: dark;
-            --bg-dark: #05030a;
-            --panel: rgba(15, 8, 28, 0.95);
-            --panel-2: rgba(20, 12, 40, 0.98);
-            --text-main: #f6f7ff;
-            --text-muted: #adb2d4;
-            --accent: #7851A9;
-            --accent-strong: #9b6af0;
-            --border: rgba(151, 109, 222, 0.22);
-            --warmup: #ffb454;
+            --bg: #ECEEEA;
+            --surface: #F7F8F5;
+            --ink: #1D2024;
+            --muted: #5B6168;
+            --rule: #C9CEC9;
+            --accent: #1F4FCC;
+            --on-accent: #fff;
+            --err: #B3261E;
+            --yellow: #EDBE2B;
+            --head: "Archivo", Arial, sans-serif;
+            --body: "Newsreader", Georgia, serif;
+            box-sizing: border-box
         }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @media (prefers-color-scheme:dark) {
+            :root {
+                --bg: #16181B;
+                --surface: #1E2125;
+                --ink: #E8EAE6;
+                --muted: #9AA0A6;
+                --rule: #34383D;
+                --accent: #6C93FF;
+                --on-accent: #0F1216;
+                --err: #FF8A80
+            }
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: inherit
+        }
 
         body {
-            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            min-height: 100vh;
-            background:
-                radial-gradient(circle at top left, rgba(120, 81, 169, 0.18), transparent 20%),
-                radial-gradient(circle at bottom right, rgba(120, 81, 169, 0.12), transparent 18%),
-                var(--bg-dark);
-            color: var(--text-main);
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font: 400 1.125rem/1.55 var(--body);
+            padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px)
         }
 
-        /* ---------- Navbar ---------- */
-        .navbar {
-            background: rgba(5, 5, 15, 0.96);
-            border-bottom: 1px solid rgba(151, 109, 222, 0.2);
-            padding: 22px 32px;
+        :focus-visible {
+            outline: 3px solid var(--accent);
+            outline-offset: 3px
+        }
+
+        a {
+            color: inherit
+        }
+
+        .wrap {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 0 clamp(1.1rem, 4vw, 2rem)
+        }
+
+        header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 16px;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            backdrop-filter: blur(16px);
-            transition: transform 0.25s ease, opacity 0.25s ease;
-            will-change: transform, opacity;
+            gap: 1rem 2rem;
+            flex-wrap: wrap;
+            padding: 1.2rem 0;
+            border-bottom: 1px solid var(--rule)
         }
 
-        .navbar.navbar-hidden { transform: translateY(-100%); opacity: 0; pointer-events: none; }
-        .navbar h1 { font-size: 1.9rem; letter-spacing: 0.03em; }
-
-        .nav-toggle {
-            display: none;
-            align-items: center;
-            justify-content: center;
-            width: 46px;
-            height: 46px;
-            border: 1px solid rgba(151, 109, 222, 0.3);
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.06);
-            color: #fff;
-            cursor: pointer;
-            transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+        .logo {
+            font: 800 1.25rem var(--head);
+            font-stretch: 112%;
+            text-decoration: none
         }
 
-        .nav-toggle:hover, .nav-toggle:focus-visible {
-            background: rgba(120, 81, 169, 0.2);
-            border-color: rgba(155, 106, 240, 0.6);
-            transform: translateY(-1px);
+        nav {
+            display: flex;
+            gap: .3rem 1.4rem;
+            flex-wrap: wrap;
+            font: 600 .95rem var(--head)
         }
 
-        .nav-toggle.is-active { background: rgba(120, 81, 169, 0.24); border-color: rgba(155, 106, 240, 0.7); }
-
-        .barbell-icon { display: inline-flex; align-items: center; gap: 4px; }
-        .barbell-icon .bar { width: 18px; height: 4px; border-radius: 999px; background: linear-gradient(90deg, #fff, #c284ff); box-shadow: 0 0 12px rgba(194, 132, 255, 0.3); }
-        .barbell-icon .plate { width: 8px; height: 12px; border-radius: 999px; background: linear-gradient(135deg, #a755ff, #7a3ecf); border: 1px solid rgba(255, 255, 255, 0.28); box-shadow: inset 0 0 4px rgba(255, 255, 255, 0.2); }
-
-        .navbar-right { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-
-        .navbar-right a {
-            color: var(--text-main);
+        nav a {
             text-decoration: none;
-            padding: 10px 16px;
-            border-radius: 999px;
-            transition: background 0.3s ease, transform 0.2s ease;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            font-weight: 600;
-            font-size: 0.92rem;
+            padding: .3rem 0
         }
 
-        .navbar-right a:hover { background: rgba(120, 81, 169, 0.18); transform: translateY(-1px); }
+        nav a:hover {
+            text-decoration: underline;
+            text-underline-offset: 4px
+        }
 
-        /* ---------- Layout ---------- */
-        .container { max-width: 760px; margin: 0 auto; padding: 28px 20px 56px; }
-
-        .page-head { margin-bottom: 20px; }
-        .page-head h2 { font-size: clamp(1.6rem, 2.4vw, 2.1rem); margin-bottom: 4px; }
-        .page-head p { color: var(--text-muted); font-size: 0.95rem; }
-
-        .message {
-            padding: 12px 14px;
-            border-radius: 12px;
-            font-weight: 600;
-            border: 1px solid transparent;
-            font-size: 0.92rem;
-            margin-bottom: 18px;
-            display: none;
-            align-items: center;
+        .top {
+            display: flex;
             justify-content: space-between;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-
-        .message.show { display: flex; }
-        .message.success { background: rgba(151, 109, 222, 0.14); border-color: rgba(151, 109, 222, 0.3); color: #e7d6ff; }
-        .message.error { background: rgba(255, 94, 94, 0.16); border-color: rgba(255, 94, 94, 0.24); color: #ffd7d7; }
-        .message a { color: inherit; text-decoration: underline; font-weight: 700; white-space: nowrap; }
-
-        /* ---------- Panels & fields ---------- */
-        .panel {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 22px;
-            padding: 24px;
-            box-shadow: 0 16px 34px rgba(0, 0, 0, 0.2);
-            margin-bottom: 18px;
-        }
-
-        .panel-title { font-size: 1rem; font-weight: 700; margin-bottom: 16px; color: #fff; }
-
-        .field-grid {
-            display: grid;
-            grid-template-columns: minmax(220px, 1.6fr) minmax(140px, 0.85fr) minmax(140px, 0.7fr);
-            gap: 14px;
             align-items: end;
-        }
-
-        .form-group { display: grid; gap: 7px; }
-        label { color: #d7dcf5; font-size: 0.86rem; font-weight: 600; }
-
-        input, select {
-            width: 100%;
-            padding: 12px 14px;
-            min-height: 46px;
-            border-radius: 12px;
-            border: 1px solid rgba(151, 109, 222, 0.22);
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--text-main);
-            font-size: 0.95rem;
-            font-family: inherit;
-            transition: border-color 0.2s ease, box-shadow 0.2s ease;
-        }
-
-        input::placeholder { color: #7e89ab; }
-
-        input:focus, select:focus {
-            outline: none;
-            border-color: rgba(155, 106, 240, 0.8);
-            box-shadow: 0 0 0 3px rgba(155, 106, 240, 0.16);
-        }
-
-        select option { background: #14092b; color: #fff; }
-        input[type="date"] { color-scheme: dark; }
-
-        /* ---------- Exercise cards ---------- */
-        #exerciseList { display: grid; gap: 12px; margin-bottom: 14px; }
-
-        .exercise-card {
-            background: var(--panel-2);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 16px;
-        }
-
-        .exercise-card-head {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 12px;
-        }
-
-        .exercise-card-head span {
-            font-size: 0.78rem;
-            color: var(--text-muted);
-            font-weight: 700;
-            letter-spacing: 0.02em;
-            text-transform: uppercase;
-        }
-
-        .remove-exercise-btn, .remove-set-btn {
-            background: rgba(255, 94, 94, 0.12);
-            border: 1px solid rgba(255, 94, 94, 0.28);
-            color: #ffb3b3;
-            border-radius: 50%;
-            font-size: 1rem;
-            line-height: 1;
-            cursor: pointer;
-            display: grid;
-            place-items: center;
-            transition: background 0.2s ease;
-            flex-shrink: 0;
-        }
-
-        .remove-exercise-btn { width: 30px; height: 30px; }
-        .remove-set-btn { width: 26px; height: 26px; font-size: 0.9rem; }
-
-        .remove-exercise-btn:hover, .remove-set-btn:hover { background: rgba(255, 94, 94, 0.22); }
-        .remove-exercise-btn:disabled, .remove-set-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-
-        .exercise-name-field { margin-bottom: 12px; }
-
-        /* Each set: label, weight, reps, warmup toggle, remove — wraps gracefully on narrow screens */
-        .sets-list { display: grid; gap: 8px; margin-bottom: 10px; }
-
-        .set-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: 8px 10px;
+            gap: 1rem;
             flex-wrap: wrap;
+            padding: 2.2rem 0 1rem
         }
 
-        .set-row.is-warmup { border-color: rgba(255, 180, 84, 0.4); background: rgba(255, 180, 84, 0.07); }
-
-        .set-label {
-            font-size: 0.78rem;
-            font-weight: 700;
-            color: var(--text-muted);
-            width: 62px;
-            flex-shrink: 0;
+        h1 {
+            font: 850 clamp(2.1rem, 6vw, 3.4rem)/1 var(--head);
+            font-stretch: 118%;
+            letter-spacing: -.025em;
+            margin: 0 0 .5rem
         }
 
-        .set-row.is-warmup .set-label { color: var(--warmup); }
-
-        .set-row input {
-            min-height: 40px;
-            padding: 8px 10px;
-            flex: 1 1 90px;
+        .lede {
+            color: var(--muted);
+            margin: 0;
+            max-width: 30rem
         }
 
-        .warmup-toggle {
-            width: 34px;
-            height: 34px;
+        .btn {
+            display: inline-block;
+            background: var(--accent);
+            color: var(--on-accent);
+            font: 700 1rem var(--head);
+            padding: .8rem 1.4rem;
+            border: 0;
+            border-radius: 6px;
+            text-decoration: none;
+            cursor: pointer;
+            min-height: 2.9rem
+        }
+
+        .btn.alt {
+            background: transparent;
+            color: var(--ink);
+            box-shadow: inset 0 0 0 2px var(--ink)
+        }
+
+        .btn[disabled] {
+            opacity: .6;
+            cursor: wait
+        }
+
+        .msg {
+            margin: 1rem 0;
+            padding: .8rem 1rem;
+            border-radius: 6px;
+            font: 600 1rem var(--head);
+            background: var(--surface);
+            box-shadow: inset 0 0 0 1px var(--rule)
+        }
+
+        .msg.err {
+            color: var(--err);
+            box-shadow: inset 0 0 0 2px var(--err)
+        }
+
+        .msg[hidden] {
+            display: none
+        }
+
+        .sec {
+            padding: 1.8rem 0;
+            border-top: 1px solid var(--rule)
+        }
+
+        .sec>h2 {
+            font: 750 1.2rem var(--head);
+            margin: 0 0 1rem
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1.4fr 1fr;
+            gap: 1rem
+        }
+
+        .g3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin-top: 1rem
+        }
+
+        .field {
+            display: grid;
+            gap: .3rem;
+            align-content: start
+        }
+
+        label,
+        .cap {
+            font: 700 .85rem var(--head)
+        }
+
+        input,
+        select {
+            font: 400 1.1rem var(--body);
+            color: var(--ink);
+            background: var(--surface);
+            border: 2px solid var(--rule);
+            border-radius: 4px;
+            padding: .65rem .75rem;
+            width: 100%;
+            min-width: 0;
+            min-height: 2.9rem
+        }
+
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--accent)
+        }
+
+        input:focus-visible,
+        select:focus-visible {
+            outline: 3px solid var(--accent);
+            outline-offset: 1px
+        }
+
+        input[type=checkbox] {
+            width: 1.35rem;
+            height: 1.35rem;
             min-height: 0;
-            border-radius: 8px;
-            border: 1px solid rgba(151, 109, 222, 0.3);
-            background: rgba(255, 255, 255, 0.04);
-            color: var(--text-muted);
-            font-size: 0.72rem;
-            font-weight: 800;
-            cursor: pointer;
-            flex-shrink: 0;
-            transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+            padding: 0;
+            accent-color: var(--accent)
         }
 
-        .warmup-toggle.active { background: rgba(255, 180, 84, 0.18); border-color: var(--warmup); color: var(--warmup); }
-        .warmup-toggle:hover { border-color: rgba(155, 106, 240, 0.6); }
-
-        .add-set-btn {
-            width: 100%;
-            padding: 10px 0;
-            min-height: 40px;
-            background: rgba(151, 109, 222, 0.1);
-            border: 1px dashed rgba(155, 106, 240, 0.4);
-            color: #d8b8ff;
-            border-radius: 12px;
-            font-weight: 700;
-            font-size: 0.85rem;
-            cursor: pointer;
-            transition: background 0.2s ease, border-color 0.2s ease;
+        .hint {
+            color: var(--muted);
+            font-size: .95rem;
+            margin: .3rem 0 0
         }
 
-        .add-set-btn:hover { background: rgba(151, 109, 222, 0.18); border-color: rgba(155, 106, 240, 0.7); }
-
-        .exercise-notes-field { margin-top: 12px; }
-
-        .add-row-btn {
-            width: 100%;
-            padding: 13px 0;
-            min-height: 46px;
-            background: rgba(151, 109, 222, 0.12);
-            border: 1px dashed rgba(155, 106, 240, 0.5);
-            color: #d8b8ff;
-            border-radius: 14px;
-            font-weight: 700;
-            font-size: 0.9rem;
-            cursor: pointer;
-            transition: background 0.2s ease, border-color 0.2s ease;
+        .ex {
+            border-top: 2px solid var(--ink);
+            padding: .9rem 0 1.4rem;
+            margin-bottom: .4rem
         }
 
-        .add-row-btn:hover { background: rgba(151, 109, 222, 0.2); border-color: rgba(155, 106, 240, 0.8); }
-
-        /* ---------- Save bar ---------- */
-        .save-bar { display: flex; gap: 12px; justify-content: flex-end; }
-
-        button.btn-primary, button.btn-ghost, button.btn-secondary {
-            border: none;
-            cursor: pointer;
-            font-weight: 700;
-            border-radius: 999px;
-            padding: 13px 26px;
-            min-height: 46px;
-            font-size: 0.92rem;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
-
-        .btn-primary {
-            background: linear-gradient(135deg, #a755ff 0%, #7d3fd0 55%, #632a9f 100%);
-            color: #f8f9ff;
-            box-shadow: 0 14px 26px rgba(167, 85, 255, 0.3);
-            border: 1px solid rgba(177, 109, 255, 0.35);
-        }
-
-        .btn-primary:hover { transform: translateY(-2px); }
-        .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
-
-        .btn-ghost { background: rgba(255, 255, 255, 0.05); color: var(--text-main); border: 1px solid rgba(255, 255, 255, 0.1); }
-        .btn-ghost:hover { background: rgba(255, 255, 255, 0.1); }
-
-        .btn-secondary { background: rgba(151, 109, 222, 0.15); color: #d8b8ff; border: 1px solid rgba(151, 109, 222, 0.4); }
-        .btn-secondary:hover { background: rgba(151, 109, 222, 0.25); transform: translateY(-2px); }
-        .btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
-
-        .hidden { display: none; }
-
-        /* ---------- Quick Adjust Modal ---------- */
-        .quick-adjust-modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(4px);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            padding: 16px;
-        }
-
-        .quick-adjust-modal {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
-            max-width: 380px;
-            width: 100%;
-            overflow: hidden;
-            animation: slideUp 0.3s ease;
-        }
-
-        @keyframes slideUp {
-            from { transform: translateY(20px); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
-        }
-
-        .modal-head {
+        .exhead {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 18px 20px;
-            border-bottom: 1px solid var(--border);
+            margin-bottom: .6rem;
+            font: 700 .9rem var(--head);
+            color: var(--muted)
         }
 
-        .modal-head h3 { font-size: 1.1rem; margin: 0; }
-
-        .modal-close {
-            background: none;
-            border: none;
-            color: var(--text-muted);
-            font-size: 1.6rem;
-            cursor: pointer;
-            transition: color 0.2s ease;
-            padding: 0;
-            width: 32px;
-            height: 32px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+        .sets {
+            margin: .8rem 0 .6rem
         }
 
-        .modal-close:hover { color: var(--text-main); }
-
-        .modal-body {
-            padding: 20px;
-        }
-
-        .adjust-buttons {
+        .cols,
+        .set {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr;
-            gap: 10px;
-            margin-bottom: 12px;
+            grid-template-columns: 4.6rem 1fr 1fr 4.2rem 2.4rem;
+            gap: .5rem;
+            align-items: center
         }
 
-        .adjust-btn {
-            padding: 12px 14px;
-            border-radius: 12px;
-            border: 1px solid rgba(151, 109, 222, 0.3);
-            background: rgba(151, 109, 222, 0.08);
-            color: #d8b8ff;
-            font-weight: 700;
-            font-size: 0.85rem;
-            cursor: pointer;
-            transition: background 0.2s ease, border-color 0.2s ease;
-            min-height: 44px;
+        .cols {
+            font: 600 .8rem var(--head);
+            color: var(--muted);
+            padding-bottom: .3rem;
+            border-bottom: 1px solid var(--ink)
         }
 
-        .adjust-btn:hover { background: rgba(151, 109, 222, 0.16); border-color: rgba(151, 109, 222, 0.5); }
+        .set {
+            padding: .4rem 0;
+            border-bottom: 1px solid var(--rule)
+        }
 
-        .modal-footer {
+        .set .lbl {
+            font: 700 .95rem var(--head)
+        }
+
+        .set.wu .lbl {
+            background: var(--yellow);
+            color: #1D2024;
+            border-radius: 20px;
+            padding: .1rem .5rem;
+            font-size: .8rem;
+            text-align: center;
+            justify-self: start
+        }
+
+        .set.wu input.w,
+        .set.wu input.r {
+            color: var(--muted)
+        }
+
+        .set .wu {
+            justify-self: center
+        }
+
+        .x,
+        .rmex {
+            border: 0;
+            background: transparent;
+            color: var(--muted);
+            font: 700 1.3rem/1 var(--head);
+            width: 2.4rem;
+            height: 2.4rem;
+            border-radius: 6px;
+            cursor: pointer
+        }
+
+        .x:hover,
+        .rmex:hover {
+            color: var(--err);
+            box-shadow: inset 0 0 0 1.5px var(--err)
+        }
+
+        .x:disabled,
+        .rmex:disabled {
+            opacity: .3;
+            cursor: not-allowed;
+            box-shadow: none;
+            color: var(--muted)
+        }
+
+        .addset,
+        .addex {
+            width: 100%;
+            background: transparent;
+            color: var(--ink);
+            font: 700 .95rem var(--head);
+            border: 2px dashed var(--rule);
+            border-radius: 6px;
+            min-height: 2.8rem;
+            cursor: pointer
+        }
+
+        .addset:hover,
+        .addex:hover {
+            border-color: var(--ink)
+        }
+
+        .addex {
+            margin-top: .6rem
+        }
+
+        .figs {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem 1.5rem;
+            margin: 0
+        }
+
+        .figs div {
+            border-top: 2px solid var(--ink);
+            padding-top: .4rem
+        }
+
+        .figs dt {
+            font: 600 .85rem var(--head);
+            color: var(--muted)
+        }
+
+        .figs dd {
+            margin: 0;
+            font: 800 1.7rem/1.15 var(--head);
+            font-stretch: 112%;
+            font-variant-numeric: tabular-nums
+        }
+
+        .save {
             display: flex;
-            gap: 10px;
-            padding: 16px 20px;
-            border-top: 1px solid var(--border);
+            gap: .7rem;
+            justify-content: flex-end;
+            padding: 1.6rem 0 3rem;
+            flex-wrap: wrap
         }
 
-        .modal-footer button { flex: 1; }
+        dialog {
+            border: 0;
+            border-radius: 10px;
+            padding: 1.4rem;
+            max-width: 24rem;
+            width: calc(100% - 2rem);
+            background: var(--surface);
+            color: var(--ink);
+            box-shadow: 0 0 0 1px var(--rule), 0 20px 50px rgba(0, 0, 0, .3)
+        }
 
-        .modal-apply:disabled { opacity: 0.4; cursor: not-allowed; }
+        dialog::backdrop {
+            background: rgba(0, 0, 0, .5)
+        }
 
-        /* ---------- Mobile ---------- */
-        @media (max-width: 860px) {
-            .nav-toggle { display: inline-flex; }
+        dialog h2 {
+            font: 750 1.2rem var(--head);
+            margin: 0 0 .4rem
+        }
 
-            .navbar-right {
-                display: none;
-                position: absolute;
-                top: calc(100% + 10px);
-                right: 20px;
-                left: 20px;
-                flex-direction: column;
-                align-items: stretch;
-                padding: 14px;
-                background: rgba(5, 5, 15, 0.98);
-                border: 1px solid rgba(151, 109, 222, 0.24);
-                border-radius: 18px;
-                box-shadow: 0 16px 32px rgba(0, 0, 0, 0.24);
+        dialog p {
+            margin: 0 0 1rem;
+            color: var(--muted)
+        }
+
+        dialog .row {
+            display: flex;
+            gap: .7rem;
+            margin-top: 1.1rem;
+            justify-content: flex-end
+        }
+
+        .hidden {
+            display: none
+        }
+
+        @media (max-width:640px) {
+            .grid {
+                grid-template-columns: 1fr
             }
 
-            .navbar-right.is-open { display: flex; }
-            .navbar-right a { width: 100%; text-align: center; justify-content: center; padding: 12px 16px; }
-        }
+            .g3 {
+                grid-template-columns: 1fr 1fr
+            }
 
-        @media (max-width: 720px) {
-            .navbar { padding: 16px 20px; }
-            .container { padding: 20px 16px 48px; }
-            .panel { padding: 18px; border-radius: 18px; }
+            .g3 .field:last-child {
+                grid-column: 1/-1
+            }
 
-            .field-grid { grid-template-columns: 1fr; gap: 12px; align-items: stretch; }
+            .figs dd {
+                font-size: 1.3rem
+            }
 
-            .save-bar { flex-direction: column-reverse; gap: 10px; }
-            button.btn-primary, button.btn-ghost { width: 100%; }
-        }
+            .cols,
+            .set {
+                grid-template-columns: 3.6rem 1fr 1fr 3.4rem 2.2rem;
+                gap: .35rem
+            }
 
-        @media (max-width: 380px) {
-            .exercise-card { padding: 12px; }
-            .set-row input { padding: 8px 8px; }
+            .save .btn {
+                flex: 1
+            }
         }
     </style>
 </head>
+
 <body>
-    <nav class="navbar">
-        <h1>Personal GymTracker </h1>
-        <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation" type="button">
-            <span class="barbell-icon" aria-hidden="true">
-                <span class="plate"></span>
-                <span class="bar"></span>
-                <span class="plate"></span>
-            </span>
-        </button>
-        <div class="navbar-right" id="navMenu">
-            <a href="dashboard.php">Dashboard</a>
-            <a href="nutrition.php">Nutrition</a>
-            <a href="profile.php">Profile</a>
-            <a href="friends.php">Friends</a>
-            <a href="api/logout.php">Logout</a>
-        </div>
-    </nav>
+    <div class="wrap">
+        <header>
+            <a class="logo" href="dashboard.php">GymTrack</a>
+            <nav aria-label="Main">
+                <a href="dashboard.php">Dashboard</a>
+                <a href="nutrition.php">Nutrition</a>
+                <a href="profile.php">Profile</a>
+                <a href="friends.php">Friends</a>
+                <a href="api/logout.php">Log out</a>
+            </nav>
+        </header>
 
-    <div class="container">
-        <div class="page-head">
-            <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+        <main>
+            <div class="top">
                 <div>
-                    <h2>Log a workout</h2>
-                    <p>One card per exercise — add as many sets as you actually did, warmups included.</p>
+                    <h1><?php echo $editWorkoutId ? 'Edit workout' : 'Log a workout'; ?></h1>
+                    <p class="lede">One sheet per exercise. Add every set you did and tick warm-ups so they stay out of
+                        your records.</p>
                 </div>
-                <button type="button" id="duplicateLastBtn" class="btn-secondary">📋 Duplicate last</button>
+                <button type="button" id="duplicateLastBtn" class="btn alt">Copy last workout</button>
             </div>
-        </div>
 
-        <div class="message" id="formMessage"></div>
+            <div class="msg" id="formMessage" role="status" aria-live="polite" hidden></div>
 
-        <form id="workoutForm">
-            <div class="panel">
-                <p class="panel-title">Session details</p>
-                <div class="field-grid">
-                    <div class="form-group">
-                        <label for="plan_select">Workout plan</label>
-                        <select id="plan_select">
-                            <option value="">No plan / not sure yet</option>
-                            <optgroup label="Common splits">
-                                <?php foreach ($commonSplits as $split): ?>
-                                    <option value="<?php echo htmlspecialchars($split); ?>"><?php echo htmlspecialchars($split); ?></option>
-                                <?php endforeach; ?>
-                            </optgroup>
-                            <?php if (!empty($customPlanNames)): ?>
-                                <optgroup label="Your plans">
-                                    <?php foreach ($customPlanNames as $p): ?>
-                                        <option value="<?php echo htmlspecialchars($p['plan_name']); ?>"><?php echo htmlspecialchars($p['plan_name']); ?></option>
+            <form id="workoutForm">
+                <section class="sec">
+                    <h2>Session</h2>
+                    <div class="grid">
+                        <div class="field">
+                            <label for="plan_select">Workout plan</label>
+                            <select id="plan_select">
+                                <option value="">No plan</option>
+                                <optgroup label="Common splits">
+                                    <?php foreach ($commonSplits as $split): ?>
+                                        <option value="<?php echo htmlspecialchars($split); ?>">
+                                            <?php echo htmlspecialchars($split); ?>
+                                        </option>
                                     <?php endforeach; ?>
                                 </optgroup>
-                            <?php endif; ?>
-                            <option value="__custom__">Custom split…</option>
-                        </select>
-                        <input type="text" id="plan_name" name="plan_name" class="hidden" placeholder="e.g. Chest + Legs, Shoulders + Back" style="margin-top: 8px;">
-                        <input type="hidden" id="workout_id" value="<?php echo htmlspecialchars($editWorkoutId ?: ''); ?>">
+                                <?php if (!empty($customPlanNames)): ?>
+                                    <optgroup label="Your plans">
+                                        <?php foreach ($customPlanNames as $p): ?>
+                                            <option value="<?php echo htmlspecialchars($p['plan_name']); ?>">
+                                                <?php echo htmlspecialchars($p['plan_name']); ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </optgroup>
+                                <?php endif; ?>
+                                <option value="__custom__">Custom split</option>
+                            </select>
+                            <input type="text" id="plan_name" name="plan_name" class="hidden"
+                                placeholder="Chest and legs" aria-label="Custom plan name">
+                        </div>
+                        <div class="field">
+                            <label for="session_date">Date</label>
+                            <input type="date" id="session_date" name="session_date"
+                                value="<?php echo htmlspecialchars($selectedSessionDate); ?>" required>
+                        </div>
                     </div>
-                    <div class="form-group">
-                        <label for="session_date">Date</label>
-                        <input type="date" id="session_date" name="session_date" value="<?php echo htmlspecialchars($selectedSessionDate); ?>" required>
+                    <div class="g3">
+                        <div class="field"><label for="start_time">Start time</label><input type="time" id="start_time">
+                        </div>
+                        <div class="field"><label for="end_time">End time</label><input type="time" id="end_time"></div>
+                        <div class="field"><label for="duration_minutes">Duration (minutes)</label><input type="number"
+                                id="duration_minutes" name="duration_minutes" min="0" step="1" inputmode="numeric"
+                                placeholder="60"></div>
                     </div>
-                </div>
-                <div class="field-grid">
-                    <div class="form-group">
-                        <label for="duration_minutes">Duration (minutes)</label>
-                        <input type="number" id="duration_minutes" name="duration_minutes" placeholder="60" min="0">
-                    </div>
-                    <div class="form-group" style="display: flex; flex-direction: column; justify-content: flex-end; padding-bottom: 12px;">
-                        <span id="duration_display" style="font-size: 0.9rem; color: var(--text-muted); font-weight: 600;"></span>
-                    </div>
-                </div>
-            </div>
+                    <p class="hint">Enter start and end times and the duration fills itself in, or type the minutes
+                        yourself.</p>
+                </section>
 
-            <div class="panel">
-                <p class="panel-title">Exercises</p>
-                <div id="exerciseList"></div>
-                <button type="button" class="add-row-btn" id="addExerciseBtn">+ Add exercise</button>
-            </div>
+                <section class="sec">
+                    <h2>Exercises</h2>
+                    <div id="exerciseList"></div>
+                    <button type="button" class="addex" id="addExerciseBtn">Add exercise</button>
+                </section>
 
-            <div class="save-bar">
-                <a href="dashboard.php"><button type="button" class="btn-ghost">Cancel</button></a>
-                <button type="submit" class="btn-primary" id="saveBtn">Save workout</button>
-            </div>
-        </form>
+                <section class="sec" aria-live="polite">
+                    <h2>This session so far</h2>
+                    <dl class="figs">
+                        <div>
+                            <dt>Working sets</dt>
+                            <dd id="sumSets">0</dd>
+                        </div>
+                        <div>
+                            <dt>Volume</dt>
+                            <dd id="sumVol">0 kg</dd>
+                        </div>
+                        <div>
+                            <dt>Heaviest set</dt>
+                            <dd id="sumTop">None yet</dd>
+                        </div>
+                    </dl>
+                    <p class="hint">Warm-up sets are not counted here.</p>
+                </section>
+
+                <div class="save">
+                    <a class="btn alt" href="dashboard.php">Cancel</a>
+                    <button type="submit" class="btn"
+                        id="saveBtn"><?php echo $editWorkoutId ? 'Update workout' : 'Save workout'; ?></button>
+                </div>
+            </form>
+        </main>
     </div>
 
     <datalist id="exerciseNames">
         <?php foreach ($exerciseSuggestions as $name): ?>
             <option value="<?php echo htmlspecialchars($name); ?>">
-        <?php endforeach; ?>
+            <?php endforeach; ?>
     </datalist>
 
-    <template id="exerciseCardTemplate">
-        <div class="exercise-card">
-            <div class="exercise-card-head">
-                <span class="exercise-number">Exercise #1</span>
-                <button type="button" class="remove-exercise-btn" aria-label="Remove exercise">×</button>
-            </div>
-            <div class="form-group exercise-name-field">
-                <label>Exercise name</label>
-                <input type="text" class="ex-name-input" list="exerciseNames" placeholder="Incline Bench Press" required>
-            </div>
-            <div class="sets-list"></div>
-            <button type="button" class="add-set-btn">+ Add set</button>
-            <div class="form-group exercise-notes-field">
-                <label>Notes (optional)</label>
-                <input type="text" class="ex-notes-input" placeholder="Felt strong today">
-            </div>
+    <dialog id="adjustDialog" aria-labelledby="adjTitle">
+        <h2 id="adjTitle">Workout saved. Change the weights for next time?</h2>
+        <p>Raise or lower every weight in this workout and edit it before your next session. Use a negative number to
+            lower.</p>
+        <div class="field"><label for="adjustAmount">Change by (kg)</label><input type="number" id="adjustAmount"
+                value="2.5" step="0.5"></div>
+        <div class="row">
+            <button type="button" class="btn alt" id="adjustSkip">Skip</button>
+            <button type="button" class="btn" id="adjustApply">Apply and edit</button>
         </div>
-    </template>
-
-    <template id="setRowTemplate">
-        <div class="set-row">
-            <span class="set-label">Set 1</span>
-            <input type="number" class="set-weight-input" step="0.5" min="0" placeholder="Weight (kg)" required>
-            <input type="number" class="set-reps-input" min="1" placeholder="Reps" required>
-            <button type="button" class="warmup-toggle" aria-pressed="false" title="Mark as warmup set">W</button>
-            <button type="button" class="remove-set-btn" aria-label="Remove set">×</button>
-        </div>
-    </template>
+    </dialog>
 
     <script>
-        // Get userId from server FIRST (needed for localStorage)
         const userId = <?php echo json_encode($userId); ?>;
-
-        // ---------- Plan dropdown <-> custom plan text field ----------
-        const planSelect = document.getElementById('plan_select');
-        const planNameInput = document.getElementById('plan_name');
-        const workoutIdInput = document.getElementById('workout_id');
-        const workoutId = <?php echo json_encode($editWorkoutId ?: null); ?> || (workoutIdInput.value ? parseInt(workoutIdInput.value, 10) : null);
+        const workoutId = <?php echo json_encode($editWorkoutId ?: null); ?>;
         const editWorkoutData = <?php echo json_encode($editWorkoutData ?: null); ?>;
         const hasExplicitSessionDate = <?php echo json_encode($hasExplicitSessionDate); ?>;
 
-        function getLocalDateString(date = new Date()) {
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const day = String(date.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
-        }
+        const $ = id => document.getElementById(id);
+        const list = $('exerciseList');
+        const planSelect = $('plan_select');
+        const planNameInput = $('plan_name');
+        const saveBtn = $('saveBtn');
+        const msgEl = $('formMessage');
 
-        if (!editWorkoutData && !hasExplicitSessionDate) {
-            document.getElementById('session_date').value = getLocalDateString();
+        function today() {
+            const d = new Date();
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
         }
+        function showMsg(text, kind, link) {
+            msgEl.textContent = text;
+            msgEl.className = 'msg' + (kind === 'err' ? ' err' : '');
+            if (link) { msgEl.append(' '); const a = document.createElement('a'); a.href = link.href; a.textContent = link.text; msgEl.append(a); }
+            msgEl.hidden = false;
+        }
+        function hideMsg() { msgEl.hidden = true; }
 
+        if (!editWorkoutData && !hasExplicitSessionDate) $('session_date').value = today();
+
+        // ---------- Plan select <-> custom plan field ----------
         planSelect.addEventListener('change', function () {
             if (this.value === '__custom__') {
-                planNameInput.value = '';
-                planNameInput.classList.remove('hidden');
-                planNameInput.required = true;
-                planNameInput.focus();
+                planNameInput.value = ''; planNameInput.classList.remove('hidden'); planNameInput.required = true; planNameInput.focus();
             } else {
-                planNameInput.value = this.value;
-                planNameInput.classList.add('hidden');
-                planNameInput.required = false;
+                planNameInput.value = this.value; planNameInput.classList.add('hidden'); planNameInput.required = false;
             }
         });
-
-        function setPlanSelection(planName) {
-            if (!planName) {
-                planSelect.value = '';
-                planNameInput.value = '';
-                planNameInput.classList.add('hidden');
-                planNameInput.required = false;
-                return;
-            }
-
-            const optionExists = [...planSelect.options].some(option => option.value === planName);
-            if (optionExists) {
-                planSelect.value = planName;
-                planNameInput.value = planName;
-                planNameInput.classList.add('hidden');
-                planNameInput.required = false;
-            } else {
-                planSelect.value = '__custom__';
-                planNameInput.value = planName;
-                planNameInput.classList.remove('hidden');
-                planNameInput.required = true;
-            }
+        function setPlan(name) {
+            const exists = name && [...planSelect.options].some(o => o.value === name);
+            planSelect.value = !name ? '' : (exists ? name : '__custom__');
+            planNameInput.value = name || '';
+            const custom = planSelect.value === '__custom__';
+            planNameInput.classList.toggle('hidden', !custom);
+            planNameInput.required = custom;
         }
 
-        function populateWorkout(data) {
-            document.getElementById('session_date').value = data.session_date;
-            setPlanSelection(data.plan_name ?? '');
-
-            exerciseList.innerHTML = '';
-            data.exercises.forEach(task => {
-                addExerciseCard();
-                const card = exerciseList.querySelector('.exercise-card:last-child');
-                card.querySelector('.ex-name-input').value = task.name;
-                card.querySelector('.ex-notes-input').value = task.notes;
-                const setsList = card.querySelector('.sets-list');
-                setsList.innerHTML = '';
-
-                task.sets.forEach((set, index) => {
-                    const clone = setTemplate.content.cloneNode(true);
-                    setsList.appendChild(clone);
-                    const row = setsList.querySelector('.set-row:last-child');
-                    row.querySelector('.set-weight-input').value = set.weight;
-                    row.querySelector('.set-reps-input').value = set.reps;
-                    if (set.is_warmup) {
-                        row.classList.add('is-warmup');
-                        const warmupToggle = row.querySelector('.warmup-toggle');
-                        warmupToggle.classList.add('active');
-                        warmupToggle.setAttribute('aria-pressed', 'true');
-                    }
-                });
-
-                renumberSets(card);
-            });
-
-            renumberExercises();
-            saveBtn.textContent = 'Update workout';
+        // ---------- Duration from start/end ----------
+        function calcDuration() {
+            const s = $('start_time').value, e = $('end_time').value;
+            if (!s || !e) return;
+            const [a, b] = s.split(':').map(Number), [c, d] = e.split(':').map(Number);
+            let m = (c * 60 + d) - (a * 60 + b);
+            if (m <= 0) m += 1440; // crossed midnight
+            $('duration_minutes').value = m;
         }
+        $('start_time').addEventListener('change', calcDuration);
+        $('end_time').addEventListener('change', calcDuration);
 
-        // ---------- Exercise cards + set rows ----------
-        const exerciseList = document.getElementById('exerciseList');
-        const exerciseTemplate = document.getElementById('exerciseCardTemplate');
-        const setTemplate = document.getElementById('setRowTemplate');
-
+        // ---------- Exercise sheets and set rows ----------
+        function setRow() {
+            const row = document.createElement('div');
+            row.className = 'set';
+            row.innerHTML = '<span class="lbl"></span>'
+                + '<input class="w" type="number" inputmode="decimal" step="0.25" min="0" required aria-label="Weight in kg">'
+                + '<input class="r" type="number" inputmode="numeric" step="1" min="1" required aria-label="Reps">'
+                + '<input class="wu" type="checkbox" aria-label="Warm-up set">'
+                + '<button type="button" class="x" aria-label="Remove set">\u00d7</button>';
+            return row;
+        }
         function renumberSets(card) {
-            const rows = card.querySelectorAll('.set-row');
-            let workingCount = 0;
-            rows.forEach(row => {
-                const isWarmup = row.classList.contains('is-warmup');
-                row.querySelector('.set-label').textContent = isWarmup ? 'Warmup' : 'Set ' + (++workingCount);
-                row.querySelector('.remove-set-btn').disabled = rows.length <= 1;
+            const rows = card.querySelectorAll('.set');
+            let n = 0;
+            rows.forEach(r => {
+                const wu = r.querySelector('.wu').checked;
+                r.classList.toggle('wu', wu);
+                r.querySelector('.lbl').textContent = wu ? 'Warm-up' : 'Set ' + (++n);
+                r.querySelector('.x').disabled = rows.length <= 1;
             });
         }
-
         function renumberExercises() {
-            const cards = exerciseList.querySelectorAll('.exercise-card');
-            cards.forEach((card, i) => {
-                card.querySelector('.exercise-number').textContent = 'Exercise #' + (i + 1);
-                card.querySelector('.remove-exercise-btn').disabled = cards.length <= 1;
+            const cards = list.querySelectorAll('.ex');
+            cards.forEach((c, i) => {
+                c.querySelector('.exn').textContent = 'Exercise ' + (i + 1);
+                c.querySelector('.rmex').disabled = cards.length <= 1;
             });
         }
-
-        function addSetRow(card, focus = false) {
-            const clone = setTemplate.content.cloneNode(true);
-            card.querySelector('.sets-list').appendChild(clone);
+        function addSet(card, s, focus) {
+            const row = setRow();
+            if (s) {
+                row.querySelector('.w').value = s.weight;
+                row.querySelector('.r').value = s.reps;
+                row.querySelector('.wu').checked = !!(s.is_warmup && s.is_warmup !== '0');
+            }
+            card.querySelector('.sets').appendChild(row);
             renumberSets(card);
-            if (focus) {
-                card.querySelector('.set-row:last-child input').focus();
-            }
+            if (focus) row.querySelector('.w').focus();
         }
-
-        function addExerciseCard(focus = false) {
-            const clone = exerciseTemplate.content.cloneNode(true);
-            exerciseList.appendChild(clone);
-            const card = exerciseList.querySelector('.exercise-card:last-child');
-            addSetRow(card);
+        function addExercise(task, focus) {
+            const card = document.createElement('div');
+            card.className = 'ex';
+            card.innerHTML = '<div class="exhead"><span class="exn"></span><button type="button" class="rmex" aria-label="Remove exercise">\u00d7</button></div>'
+                + '<div class="field"><label>Exercise name</label><input type="text" class="nm" list="exerciseNames" placeholder="Incline bench press" required></div>'
+                + '<div class="sets"><div class="cols" aria-hidden="true"><span>Set</span><span>Weight (kg)</span><span>Reps</span><span>Warm-up</span><span></span></div></div>'
+                + '<button type="button" class="addset">Add set</button>'
+                + '<div class="field" style="margin-top:.9rem"><label>Notes (optional)</label><input type="text" class="nt" placeholder="Felt strong today"></div>';
+            list.appendChild(card);
+            if (task) {
+                card.querySelector('.nm').value = task.name || '';
+                card.querySelector('.nt').value = task.notes || '';
+                (task.sets && task.sets.length ? task.sets : [null]).forEach(s => addSet(card, s, false));
+            } else {
+                addSet(card, null, false);
+            }
             renumberExercises();
-            if (focus) {
-                card.querySelector('.ex-name-input').focus();
-            }
+            if (focus) card.querySelector('.nm').focus();
+            updateSummary();
+        }
+        function populate(data) {
+            if (data.session_date) $('session_date').value = data.session_date;
+            setPlan(data.plan_name || '');
+            $('duration_minutes').value = data.duration_minutes ? data.duration_minutes : '';
+            list.innerHTML = '';
+            (data.exercises && data.exercises.length ? data.exercises : [null]).forEach(t => addExercise(t, false));
+            updateSummary();
         }
 
-        // One delegated listener handles every button inside every exercise card,
-        // including ones added later — no per-clone listeners needed.
-        exerciseList.addEventListener('click', function (e) {
-            const removeExBtn = e.target.closest('.remove-exercise-btn');
-            if (removeExBtn && !removeExBtn.disabled) {
-                removeExBtn.closest('.exercise-card').remove();
-                renumberExercises();
-                return;
-            }
-
-            const addSetBtn = e.target.closest('.add-set-btn');
-            if (addSetBtn) {
-                addSetRow(addSetBtn.closest('.exercise-card'), true);
-                return;
-            }
-
-            const removeSetBtn = e.target.closest('.remove-set-btn');
-            if (removeSetBtn && !removeSetBtn.disabled) {
-                const card = removeSetBtn.closest('.exercise-card');
-                removeSetBtn.closest('.set-row').remove();
-                renumberSets(card);
-                return;
-            }
-
-            const warmupBtn = e.target.closest('.warmup-toggle');
-            if (warmupBtn) {
-                const row = warmupBtn.closest('.set-row');
-                const isNowWarmup = row.classList.toggle('is-warmup');
-                warmupBtn.classList.toggle('active', isNowWarmup);
-                warmupBtn.setAttribute('aria-pressed', isNowWarmup);
-                renumberSets(warmupBtn.closest('.exercise-card'));
-            }
+        list.addEventListener('click', e => {
+            const rmEx = e.target.closest('.rmex');
+            if (rmEx && !rmEx.disabled) { rmEx.closest('.ex').remove(); renumberExercises(); updateSummary(); return; }
+            const add = e.target.closest('.addset');
+            if (add) { addSet(add.closest('.ex'), null, true); updateSummary(); return; }
+            const rm = e.target.closest('.x');
+            if (rm && !rm.disabled) { const card = rm.closest('.ex'); rm.closest('.set').remove(); renumberSets(card); updateSummary(); }
         });
-
-        document.getElementById('addExerciseBtn').addEventListener('click', () => addExerciseCard(true));
-
-        // ---------- Nav toggle (mobile) ----------
-        const navToggle = document.getElementById('navToggle');
-        const navMenu = document.getElementById('navMenu');
-
-        if (navToggle && navMenu) {
-            navToggle.addEventListener('click', function () {
-                navMenu.classList.toggle('is-open');
-                navToggle.classList.toggle('is-active');
-            });
-
-            document.addEventListener('click', function (event) {
-                if (!navToggle.contains(event.target) && !navMenu.contains(event.target)) {
-                    navMenu.classList.remove('is-open');
-                    navToggle.classList.remove('is-active');
-                }
-            });
-        }
-
-        // ---------- Hide navbar on scroll down, show on scroll up ----------
-        const navbar = document.querySelector('.navbar');
-        let lastScrollY = window.scrollY;
-
-        window.addEventListener('scroll', () => {
-            const currentScrollY = window.scrollY;
-            if (currentScrollY > lastScrollY && currentScrollY > 80) {
-                navbar.classList.add('navbar-hidden');
-            } else if (currentScrollY < lastScrollY) {
-                navbar.classList.remove('navbar-hidden');
-            }
-            lastScrollY = currentScrollY;
+        list.addEventListener('change', e => {
+            if (e.target.classList.contains('wu')) { renumberSets(e.target.closest('.ex')); updateSummary(); }
         });
+        list.addEventListener('input', updateSummary);
+        $('addExerciseBtn').addEventListener('click', () => addExercise(null, true));
 
-        // ---------- LocalStorage auto-save ----------
-        const STORAGE_KEY = `gym-workout-draft-${userId}`;
-        const AUTOSAVE_DELAY = 1000; // Save after 1 second of inactivity
-        let autosaveTimeout;
-
-        function saveFormToLocalStorage() {
-            const formData = buildPayload();
-            try {
-                localStorage.setItem(STORAGE_KEY, JSON.stringify(formData));
-                console.log('Form auto-saved to localStorage');
-            } catch (e) {
-                console.warn('Could not save to localStorage:', e);
-            }
+        // ---------- Summary (working sets only) ----------
+        function updateSummary() {
+            let sets = 0, vol = 0, top = null;
+            list.querySelectorAll('.set').forEach(r => {
+                if (r.querySelector('.wu').checked) return;
+                const w = parseFloat(r.querySelector('.w').value), rp = parseInt(r.querySelector('.r').value, 10);
+                if (isNaN(w) || isNaN(rp)) return;
+                sets++; vol += w * rp;
+                if (!top || w > top.w || (w === top.w && rp > top.r)) top = { w, r: rp };
+            });
+            $('sumSets').textContent = sets;
+            $('sumVol').textContent = Math.round(vol).toLocaleString() + ' kg';
+            $('sumTop').textContent = top ? top.w + ' kg x ' + top.r : 'None yet';
         }
 
-        function loadFormFromLocalStorage() {
-            try {
-                const saved = localStorage.getItem(STORAGE_KEY);
-                if (saved) {
-                    const data = JSON.parse(saved);
-                    // Only restore if not editing an existing workout
-                    if (!editWorkoutData) {
-                        populateWorkout(data);
-                        showMessage('📝 Restored your previous session draft', 'success');
-                        setTimeout(() => messageEl.classList.remove('show'), 3000);
-                        return true;
-                    }
-                }
-            } catch (e) {
-                console.warn('Could not restore from localStorage:', e);
-            }
-            return false;
-        }
-
-        function clearFormLocalStorage() {
-            try {
-                localStorage.removeItem(STORAGE_KEY);
-            } catch (e) {
-                console.warn('Could not clear localStorage:', e);
-            }
-        }
-
-        // Auto-save on input changes
-        document.addEventListener('change', () => {
-            clearTimeout(autosaveTimeout);
-            autosaveTimeout = setTimeout(saveFormToLocalStorage, AUTOSAVE_DELAY);
-        });
-
-        document.addEventListener('input', () => {
-            clearTimeout(autosaveTimeout);
-            autosaveTimeout = setTimeout(saveFormToLocalStorage, AUTOSAVE_DELAY);
-        });
-
-        // ---------- Duplicate last workout ----------
-        async function duplicateLastWorkout() {
-            const btn = document.getElementById('duplicateLastBtn');
-            btn.disabled = true;
-            btn.textContent = 'Loading...';
-
-            try {
-                const res = await fetch('api/get-last-workout.php');
-                const data = await res.json();
-
-                if (data.success) {
-                    populateWorkout(data);
-                    showMessage('✅ Last workout loaded! Adjust weights and save.', 'success');
-                    setTimeout(() => messageEl.classList.remove('show'), 3000);
-                    // Scroll to top
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                } else {
-                    showMessage(data.error || 'Could not load last workout.', 'error');
-                }
-            } catch (e) {
-                showMessage('Error loading last workout.', 'error');
-            } finally {
-                btn.disabled = false;
-                btn.textContent = '📋 Duplicate last';
-            }
-        }
-
-        document.getElementById('duplicateLastBtn').addEventListener('click', duplicateLastWorkout);
-
-        // ---------- Quick weight adjustment modal ----------
-        function showWeightAdjustmentModal(sessionId) {
-            const modal = document.createElement('div');
-            modal.className = 'quick-adjust-modal-overlay';
-            modal.innerHTML = `
-                <div class="quick-adjust-modal">
-                    <div class="modal-head">
-                        <h3>Adjust weights for next time?</h3>
-                        <button class="modal-close" type="button">×</button>
-                    </div>
-                    <div class="modal-body">
-                        <p style="color: var(--text-muted); margin-bottom: 16px;">Bump all weights up or down for your next session.</p>
-                        <div class="adjust-buttons">
-                            <button type="button" class="adjust-btn adjust-minus">-2.5 kg</button>
-                            <button type="button" class="adjust-btn adjust-custom">Custom</button>
-                            <button type="button" class="adjust-btn adjust-plus">+2.5 kg</button>
-                        </div>
-                        <input type="number" id="customAdjustAmount" class="hidden" placeholder="Enter amount (e.g., 5 or -2.5)" step="0.5" style="width: 100%; margin-top: 12px; display: none;">
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn-ghost modal-cancel">Skip</button>
-                        <button type="button" class="btn-primary modal-apply" disabled>Apply & Edit</button>
-                    </div>
-                </div>
-            `;
-
-            document.body.appendChild(modal);
-
-            let adjustAmount = null;
-            const customInput = modal.querySelector('#customAdjustAmount');
-            const applyBtn = modal.querySelector('.modal-apply');
-            const customBtn = modal.querySelector('.adjust-custom');
-
-            modal.querySelector('.adjust-minus').addEventListener('click', () => {
-                adjustAmount = -2.5;
-                applyBtn.disabled = false;
-            });
-
-            modal.querySelector('.adjust-plus').addEventListener('click', () => {
-                adjustAmount = 2.5;
-                applyBtn.disabled = false;
-            });
-
-            customBtn.addEventListener('click', () => {
-                customInput.style.display = customInput.style.display === 'none' ? 'block' : 'none';
-                customInput.focus();
-            });
-
-            customInput.addEventListener('change', () => {
-                const val = parseFloat(customInput.value);
-                if (!isNaN(val)) {
-                    adjustAmount = val;
-                    applyBtn.disabled = false;
-                }
-            });
-
-            applyBtn.addEventListener('click', () => {
-                if (adjustAmount !== null) {
-                    window.location.href = `log-workout.php?workout_id=${sessionId}&adjust=${adjustAmount}`;
-                }
-            });
-
-            modal.querySelector('.modal-close').addEventListener('click', () => modal.remove());
-            modal.querySelector('.modal-cancel').addEventListener('click', () => modal.remove());
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) modal.remove();
-            });
-        }
-
-        // Get userId for localStorage (from the server)
-        
-
-        // ---------- Calculate duration from start and end times ----------
-        function calculateDuration() {
-            const startTime = document.getElementById('start_time').value;
-            const endTime = document.getElementById('end_time').value;
-            const durationDisplay = document.getElementById('duration_display');
-
-            if (!startTime || !endTime) {
-                if (durationDisplay) {
-                    durationDisplay.textContent = '';
-                }
-                return null;
-            }
-
-            const [startHour, startMin] = startTime.split(':').map(Number);
-            const [endHour, endMin] = endTime.split(':').map(Number);
-
-            const startTotalMin = startHour * 60 + startMin;
-            const endTotalMin = endHour * 60 + endMin;
-            const duration = endTotalMin - startTotalMin;
-
-            if (durationDisplay && duration > 0) {
-                durationDisplay.textContent = `~${duration} min`;
-            }
-
-            return duration > 0 ? duration : null;
-        }
-
-        // Auto-calculate duration when times change
-        document.getElementById('start_time').addEventListener('change', calculateDuration);
-        document.getElementById('end_time').addEventListener('change', calculateDuration);
-
-        // ---------- Build the payload from the DOM, then submit as JSON ----------
+        // ---------- Payload (same shape the api files already expect) ----------
         function buildPayload() {
             const exercises = [];
-
-            exerciseList.querySelectorAll('.exercise-card').forEach(card => {
-                const name = card.querySelector('.ex-name-input').value.trim();
-                const notes = card.querySelector('.ex-notes-input').value.trim();
+            list.querySelectorAll('.ex').forEach(card => {
+                const name = card.querySelector('.nm').value.trim();
+                const notes = card.querySelector('.nt').value.trim();
                 const sets = [];
-
-                card.querySelectorAll('.set-row').forEach(row => {
-                    const weight = row.querySelector('.set-weight-input').value;
-                    const reps = row.querySelector('.set-reps-input').value;
-                    if (weight === '' && reps === '') return; // skip a fully empty set row
-
-                    sets.push({
-                        weight: weight,
-                        reps: reps,
-                        is_warmup: row.classList.contains('is-warmup'),
-                    });
+                card.querySelectorAll('.set').forEach(row => {
+                    const weight = row.querySelector('.w').value, reps = row.querySelector('.r').value;
+                    if (weight === '' && reps === '') return;
+                    sets.push({ weight, reps, is_warmup: row.querySelector('.wu').checked });
                 });
-
-                if (name === '' && sets.length === 0) return; // skip a fully empty exercise card
+                if (name === '' && sets.length === 0) return;
                 exercises.push({ name, notes, sets });
             });
-
-            const durationMinutes = calculateDuration();
-
+            const dv = $('duration_minutes').value;
             return {
                 workout_id: workoutId,
                 plan_name: planNameInput.value,
-                session_date: document.getElementById('session_date').value,
-                duration_minutes: durationMinutes,
+                session_date: $('session_date').value,
+                duration_minutes: dv === '' ? null : parseInt(dv, 10),
                 exercises,
             };
         }
 
-        // ---------- Form submit via AJAX — stays on this page after saving ----------
-        const form = document.getElementById('workoutForm');
-        const messageEl = document.getElementById('formMessage');
-        const saveBtn = document.getElementById('saveBtn');
-
-        function showMessage(html, type) {
-            messageEl.innerHTML = html;
-            messageEl.className = 'message show ' + type;
+        // ---------- Draft auto-save (new workouts only) ----------
+        const STORAGE_KEY = 'gym-workout-draft-' + userId;
+        let draftTimer;
+        function saveDraft() {
+            if (editWorkoutData) return;
+            try { localStorage.setItem(STORAGE_KEY, JSON.stringify(buildPayload())); } catch (e) { }
         }
-
-        function resetFormForNextEntry() {
-            // Start fresh after saving, default to today’s date so add flow is always current.
-            document.getElementById('session_date').value = getLocalDateString();
-            
-            
-            document.getElementById('duration_display').textContent = '';
-            exerciseList.innerHTML = '';
-            addExerciseCard();
+        function clearDraft() { try { localStorage.removeItem(STORAGE_KEY); } catch (e) { } }
+        function restoreDraft() {
+            try {
+                const saved = localStorage.getItem(STORAGE_KEY);
+                if (!saved || editWorkoutData) return false;
+                const data = JSON.parse(saved);
+                if (!data.exercises || !data.exercises.length) return false;
+                populate(data);
+                showMsg('Restored your unsaved draft.', 'ok');
+                return true;
+            } catch (e) { return false; }
         }
+        ['input', 'change'].forEach(ev => document.addEventListener(ev, () => { clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 1000); }));
 
-        form.addEventListener('submit', function (e) {
-            e.preventDefault();
-            saveBtn.disabled = true;
-            saveBtn.textContent = 'Saving…';
-
-            const endpoint = workoutId ? 'api/update-workout.php' : 'api/add-workout.php';
-            fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(buildPayload())
-            })
-            .then(res => res.json())
-            .then(data => {
+        // ---------- Copy last workout ----------
+        $('duplicateLastBtn').addEventListener('click', async function () {
+            const btn = this; btn.disabled = true; btn.textContent = 'Loading';
+            try {
+                const res = await fetch('api/get-last-workout.php');
+                const data = await res.json();
                 if (data.success) {
-                    clearFormLocalStorage(); // Clear saved draft after successful save
-                    if (workoutId) {
-                        // Editing an existing workout
-                        showMessage('Workout updated! <a href="workouts.php">View in My Workouts</a>', 'success');
-                    } else {
-                        // New workout saved — show quick adjust modal then redirect to edit
-                        showMessage('✅ Workout saved!', 'success');
-                        setTimeout(() => {
-                            showWeightAdjustmentModal(data.sessionId);
-                        }, 500);
-                    }
+                    populate(data);
+                    showMsg('Last workout copied. Adjust the weights and save.', 'ok');
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
                 } else {
-                    showMessage(data.error || 'Something went wrong. Please try again.', 'error');
+                    showMsg(data.error || 'No earlier workout to copy yet.', 'err');
                 }
-            })
-            .catch(() => {
-                showMessage('Could not reach the server. Please try again.', 'error');
-            })
-            .finally(() => {
-                saveBtn.disabled = false;
-                saveBtn.textContent = workoutId ? 'Update workout' : 'Save workout';
-            });
+            } catch (e) {
+                showMsg('Could not load your last workout. Check your connection and try again.', 'err');
+            } finally { btn.disabled = false; btn.textContent = 'Copy last workout'; }
         });
 
-        // Populate the form now that everything above (saveBtn, the submit handler, etc.) exists.
-        if (editWorkoutData) {
-            populateWorkout(editWorkoutData);
-        } else if (!loadFormFromLocalStorage()) {
-            // Start with one exercise card (which itself starts with one set row)
-            addExerciseCard();
+        // ---------- Reset after a save ----------
+        function resetForm() {
+            $('session_date').value = today();
+            setPlan('');
+            $('start_time').value = ''; $('end_time').value = ''; $('duration_minutes').value = '';
+            list.innerHTML = '';
+            addExercise(null, false);
+            updateSummary();
         }
 
-        // Handle weight adjustment if coming from quick adjust modal
-        const urlParams = new URLSearchParams(window.location.search);
-        const adjustAmount = parseFloat(urlParams.get('adjust'));
-        if (!isNaN(adjustAmount) && adjustAmount !== 0 && editWorkoutData) {
-            // Adjust all weights
-            exerciseList.querySelectorAll('.set-weight-input').forEach(input => {
-                const currentWeight = parseFloat(input.value) || 0;
-                const newWeight = Math.max(0, currentWeight + adjustAmount);
-                input.value = newWeight.toFixed(adjustAmount % 1 !== 0 ? 1 : 0);
+        // ---------- Weight adjust dialog ----------
+        const dlg = $('adjustDialog');
+        let lastSessionId = null;
+        $('adjustSkip').addEventListener('click', () => { dlg.close(); resetForm(); });
+        dlg.addEventListener('cancel', () => resetForm());
+        $('adjustApply').addEventListener('click', () => {
+            const amt = parseFloat($('adjustAmount').value);
+            if (isNaN(amt) || amt === 0) { $('adjustAmount').focus(); return; }
+            location.href = 'log-workout.php?workout_id=' + encodeURIComponent(lastSessionId) + '&adjust=' + encodeURIComponent(amt);
+        });
+
+        // ---------- Submit ----------
+        $('workoutForm').addEventListener('submit', function (e) {
+            e.preventDefault();
+            hideMsg();
+            const payload = buildPayload();
+            if (!payload.exercises.length) { showMsg('Add at least one exercise with a set before saving.', 'err'); return; }
+            saveBtn.disabled = true; saveBtn.textContent = 'Saving';
+
+            fetch(workoutId ? 'api/update-workout.php' : 'api/add-workout.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+                .then(res => res.text().then(t => { try { return JSON.parse(t); } catch (err) { throw new Error('bad response: ' + t.slice(0, 200)); } }))
+                .then(data => {
+                    if (data.success) {
+                        clearTimeout(draftTimer);
+                        clearDraft();
+                        if (workoutId) {
+                            showMsg('Workout updated.', 'ok', { href: 'workouts.php', text: 'View it in My workouts' });
+                        } else {
+                            showMsg('Workout saved.', 'ok', { href: 'workouts.php', text: 'View my workouts' });
+                            if (data.sessionId) { lastSessionId = data.sessionId; dlg.showModal(); } else { resetForm(); }
+                        }
+                    } else {
+                        showMsg(data.error || 'The workout could not be saved. Check the details and try again.', 'err');
+                    }
+                })
+                .catch(err => {
+                    console.error(err);
+                    showMsg('The server sent back something unexpected, so nothing was saved. Open the browser console for details.', 'err');
+                })
+                .finally(() => {
+                    saveBtn.disabled = false; saveBtn.textContent = workoutId ? 'Update workout' : 'Save workout';
+                });
+        });
+
+        // ---------- Start up ----------
+        if (editWorkoutData) populate(editWorkoutData);
+        else if (!restoreDraft()) addExercise(null, false);
+
+        // Weight adjust coming back from the dialog
+        const adj = parseFloat(new URLSearchParams(location.search).get('adjust'));
+        if (!isNaN(adj) && adj !== 0 && editWorkoutData) {
+            list.querySelectorAll('.set .w').forEach(inp => {
+                const v = parseFloat(inp.value) || 0;
+                inp.value = Math.max(0, Math.round((v + adj) * 100) / 100);
             });
-            showMessage(`📈 Weights adjusted by ${adjustAmount > 0 ? '+' : ''}${adjustAmount} kg`, 'success');
-            setTimeout(() => messageEl.classList.remove('show'), 3000);
-            // Clean up URL
-            window.history.replaceState({}, document.title, window.location.pathname + '?workout_id=' + editWorkoutId);
+            updateSummary();
+            showMsg('All weights changed by ' + (adj > 0 ? '+' : '') + adj + ' kg. Review them and click Update workout.', 'ok');
+            history.replaceState({}, document.title, location.pathname + '?workout_id=' + workoutId);
         }
     </script>
 </body>
+
 </html>
