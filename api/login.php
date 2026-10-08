@@ -21,7 +21,7 @@ $password = $_POST['password'] ?? '';
 
 // Validate input
 if (empty($username) || empty($password)) {
-    header('Location: ../index.php?error=invalid_input');
+    header('Location: ../login.php?error=invalid_input');
     exit;
 }
 
@@ -38,7 +38,7 @@ $result = $stmt->get_result();
 
 // Check if user exists
 if ($result->num_rows !== 1) {
-    header('Location: ../index.php?error=invalid_login');
+    header('Location: ../login.php?error=invalid_login');
     $stmt->close();
     exit;
 }
@@ -47,7 +47,7 @@ $user = $result->fetch_assoc();
 
 // Verify password using bcrypt
 if (!password_verify($password, $user['password_hash'])) {
-    header('Location: ../index.php?error=invalid_login');
+    header('Location: ../login.php?error=invalid_login');
     $stmt->close();
     exit;
 }
