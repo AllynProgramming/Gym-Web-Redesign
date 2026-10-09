@@ -9,356 +9,368 @@ requireLogin();
 
 $userId = getUserId();
 $user = getUserInfo($conn, $userId);
+
+function gt_e($s)
+{
+    return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Profile - Perosnal GymTracker </title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <script src="assets/theme.js"></script>
+    <title>Profile | GymTrack</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..900&family=Newsreader:opsz,wght@6..72,400..600&display=swap"
+        rel="stylesheet">
     <style>
         :root {
-            color-scheme: dark;
-            --bg-dark: #05030a;
-            --panel: rgba(15, 8, 28, 0.95);
-            --panel-2: rgba(20, 12, 40, 0.98);
-            --text-main: #f6f7ff;
-            --text-muted: #adb2d4;
-            --border: rgba(151, 109, 222, 0.22);
+            --bg: #ECEEEA;
+            --surface: #F7F8F5;
+            --ink: #1D2024;
+            --muted: #5B6168;
+            --rule: #C9CEC9;
+            --accent: #1F4FCC;
+            --on-accent: #fff;
+            --err: #B3261E;
+            --head: "Archivo", Arial, sans-serif;
+            --body: "Newsreader", Georgia, serif;
+            box-sizing: border-box
         }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @media (prefers-color-scheme:dark) {
+            :root {
+                --bg: #16181B;
+                --surface: #1E2125;
+                --ink: #E8EAE6;
+                --muted: #9AA0A6;
+                --rule: #34383D;
+                --accent: #6C93FF;
+                --on-accent: #0F1216;
+                --err: #FF8A80
+            }
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: inherit
+        }
 
         body {
-            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            min-height: 100vh;
-            background:
-                radial-gradient(circle at top left, rgba(120, 81, 169, 0.18), transparent 20%),
-                radial-gradient(circle at bottom right, rgba(120, 81, 169, 0.12), transparent 18%),
-                var(--bg-dark);
-            color: var(--text-main);
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font: 400 1.125rem/1.55 var(--body);
+            padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px)
         }
 
-        /* ---------- Navbar (same pattern site-wide) ---------- */
-        .navbar {
-            background: rgba(5, 5, 15, 0.96);
-            border-bottom: 1px solid rgba(151, 109, 222, 0.2);
-            padding: 22px 32px;
+        :focus-visible {
+            outline: 3px solid var(--accent);
+            outline-offset: 3px
+        }
+
+        a {
+            color: inherit
+        }
+
+        .wrap {
+            max-width: 640px;
+            margin: 0 auto;
+            padding: 0 clamp(1.1rem, 4vw, 2rem)
+        }
+
+        header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 16px;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            backdrop-filter: blur(16px);
+            gap: 1rem 2rem;
+            flex-wrap: wrap;
+            padding: 1.2rem 0;
+            border-bottom: 1px solid var(--rule)
         }
 
-        .navbar h1 { font-size: 1.9rem; letter-spacing: 0.03em; }
+        .logo {
+            font: 800 1.25rem var(--head);
+            font-stretch: 112%;
+            text-decoration: none
+        }
 
-        .nav-toggle {
-            display: none;
+        nav {
+            display: flex;
+            gap: .3rem 1.4rem;
+            flex-wrap: wrap;
             align-items: center;
-            justify-content: center;
-            width: 46px;
-            height: 46px;
-            border: 1px solid rgba(151, 109, 222, 0.3);
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.06);
-            color: #fff;
-            cursor: pointer;
+            font: 600 .95rem var(--head)
         }
 
-        .barbell-icon { display: inline-flex; align-items: center; gap: 4px; }
-        .barbell-icon .bar { width: 18px; height: 4px; border-radius: 999px; background: linear-gradient(90deg, #fff, #c284ff); box-shadow: 0 0 12px rgba(194, 132, 255, 0.3); }
-        .barbell-icon .plate { width: 8px; height: 12px; border-radius: 999px; background: linear-gradient(135deg, #a755ff, #7a3ecf); border: 1px solid rgba(255, 255, 255, 0.28); box-shadow: inset 0 0 4px rgba(255, 255, 255, 0.2); }
-
-        .navbar-right { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-
-        .navbar-right a {
-            color: var(--text-main);
+        nav a {
             text-decoration: none;
-            padding: 10px 16px;
-            border-radius: 999px;
-            transition: background 0.3s ease;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            font-weight: 600;
-            font-size: 0.92rem;
+            padding: .3rem 0
         }
 
-        .navbar-right a:hover { background: rgba(120, 81, 169, 0.18); }
-
-        /* ---------- Layout ---------- */
-        .container { max-width: 640px; margin: 0 auto; padding: 32px 24px 60px; }
-
-        .page-head { margin-bottom: 22px; }
-        .page-head h2 { font-size: clamp(1.8rem, 2.5vw, 2.2rem); margin-bottom: 6px; }
-        .page-head p { color: var(--text-muted); font-size: 1rem; }
-
-        .panel {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 22px;
-            padding: 26px;
-            margin-bottom: 20px;
-            box-shadow: 0 16px 34px rgba(0, 0, 0, 0.2);
+        nav a:hover {
+            text-decoration: underline;
+            text-underline-offset: 4px
         }
 
-        .panel-title { font-size: 1.05rem; font-weight: 700; margin-bottom: 4px; color: #fff; }
-        .panel-subtitle { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 18px; }
-
-        .message {
-            padding: 11px 14px;
-            border-radius: 12px;
-            font-weight: 600;
-            font-size: 0.88rem;
-            margin-bottom: 16px;
-            display: none;
+        .top {
+            padding: 2.2rem 0 .8rem
         }
-        .message.show { display: block; }
-        .message.success { background: rgba(151, 109, 222, 0.14); border: 1px solid rgba(151, 109, 222, 0.3); color: #e7d6ff; }
-        .message.error { background: rgba(255, 94, 94, 0.16); border: 1px solid rgba(255, 94, 94, 0.24); color: #ffd7d7; }
 
-        .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-        .form-group { display: grid; gap: 7px; margin-bottom: 16px; }
-        .form-group:last-of-type { margin-bottom: 0; }
+        h1 {
+            font: 850 clamp(2.1rem, 6vw, 3.4rem)/1.02 var(--head);
+            font-stretch: 118%;
+            letter-spacing: -.025em;
+            margin: 0 0 .5rem;
+            overflow-wrap: anywhere
+        }
 
-        label { color: #d7dcf5; font-size: 0.86rem; font-weight: 600; }
+        .lede {
+            color: var(--muted);
+            margin: 0
+        }
 
-        input {
+        .sec {
+            padding: 1.8rem 0;
+            border-top: 1px solid var(--rule);
+            margin-top: 1.4rem
+        }
+
+        .sec>h2 {
+            font: 750 1.2rem var(--head);
+            margin: 0 0 .3rem
+        }
+
+        .sub {
+            color: var(--muted);
+            margin: 0 0 1.2rem
+        }
+
+        .two {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem
+        }
+
+        .field {
+            display: grid;
+            gap: .3rem;
+            align-content: start;
+            margin-bottom: 1rem
+        }
+
+        label {
+            font: 700 .85rem var(--head)
+        }
+
+        input[type=text],
+        input[type=password] {
+            font: 400 1.1rem var(--body);
+            color: var(--ink);
+            background: var(--surface);
+            border: 2px solid var(--rule);
+            border-radius: 4px;
+            padding: .65rem .75rem;
             width: 100%;
-            padding: 12px 14px;
-            min-height: 46px;
-            border-radius: 12px;
-            border: 1px solid rgba(151, 109, 222, 0.22);
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--text-main);
-            font-size: 0.95rem;
-            font-family: inherit;
-            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            min-width: 0;
+            min-height: 2.9rem
         }
 
-        input::placeholder { color: #7e89ab; }
-
-        input:focus {
+        input[type=text]:focus,
+        input[type=password]:focus {
             outline: none;
-            border-color: rgba(155, 106, 240, 0.8);
-            box-shadow: 0 0 0 3px rgba(155, 106, 240, 0.16);
+            border-color: var(--accent)
         }
 
-        .hint { font-size: 0.78rem; color: var(--text-muted); margin-top: -2px; }
+        input[type=text]:focus-visible,
+        input[type=password]:focus-visible {
+            outline: 3px solid var(--accent);
+            outline-offset: 1px
+        }
 
-        .save-btn {
-            margin-top: 6px;
-            padding: 12px 26px;
-            min-height: 46px;
-            border: none;
-            border-radius: 999px;
-            background: linear-gradient(135deg, #a755ff 0%, #7d3fd0 55%, #632a9f 100%);
-            color: #fff;
-            font-weight: 700;
-            font-size: 0.92rem;
+        input[type=checkbox] {
+            width: 1.2rem;
+            height: 1.2rem;
+            accent-color: var(--accent)
+        }
+
+        .hint {
+            color: var(--muted);
+            font-size: .95rem;
+            margin: 0
+        }
+
+        .show {
+            display: flex;
+            align-items: center;
+            gap: .5rem;
+            font: 600 .95rem var(--head);
+            margin: 0 0 1.2rem;
+            cursor: pointer
+        }
+
+        .btn {
+            display: inline-block;
+            background: var(--accent);
+            color: var(--on-accent);
+            font: 700 1rem var(--head);
+            padding: .75rem 1.4rem;
+            border: 0;
+            border-radius: 6px;
             cursor: pointer;
-            transition: transform 0.2s ease;
+            min-height: 2.8rem
         }
 
-        .save-btn:hover { transform: translateY(-2px); }
-        .save-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .btn[disabled] {
+            opacity: .6;
+            cursor: wait
+        }
 
-        @media (max-width: 560px) {
-            .container { padding: 20px 16px 40px; }
-            .navbar { padding: 16px 20px; }
-            .nav-toggle { display: inline-flex; }
-            .field-row { grid-template-columns: 1fr; }
+        .msg {
+            margin: 0 0 1rem;
+            padding: .75rem 1rem;
+            border-radius: 6px;
+            font: 600 1rem var(--head);
+            background: var(--surface);
+            box-shadow: inset 0 0 0 1px var(--rule)
+        }
 
-            .navbar-right {
-                display: none;
-                position: absolute;
-                top: calc(100% + 10px);
-                right: 20px;
-                left: 20px;
-                flex-direction: column;
-                align-items: stretch;
-                padding: 14px;
-                background: rgba(5, 5, 15, 0.98);
-                border: 1px solid rgba(151, 109, 222, 0.24);
-                border-radius: 18px;
-                box-shadow: 0 16px 32px rgba(0, 0, 0, 0.24);
+        .msg.err {
+            color: var(--err);
+            box-shadow: inset 0 0 0 2px var(--err)
+        }
+
+        .msg[hidden] {
+            display: none
+        }
+
+        footer {
+            padding: 1rem 0 3rem
+        }
+
+        @media (max-width:560px) {
+            .two {
+                grid-template-columns: 1fr
             }
-
-            .navbar-right.is-open { display: flex; }
-            .navbar-right a { width: 100%; text-align: center; justify-content: center; }
         }
     </style>
 </head>
+
 <body>
-    <nav class="navbar">
-        <h1>Personal GymTracker </h1>
-        <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation" type="button">
-            <span class="barbell-icon" aria-hidden="true">
-                <span class="plate"></span>
-                <span class="bar"></span>
-                <span class="plate"></span>
-            </span>
-        </button>
-        <div class="navbar-right" id="navMenu">
-            <a href="dashboard.php">Dashboard</a>
-            <a href="nutrition.php">Nutrition</a>
-            <a href="friends.php">Friends</a>
-            <a href="api/logout.php">Logout</a>
-        </div>
-    </nav>
+    <div class="wrap">
+        <header>
+            <a class="logo" href="dashboard.php">GymTrack</a>
+            <nav aria-label="Main">
+                <a href="dashboard.php">Dashboard</a>
+                <a href="log-workout.php">Log workout</a>
+                <a href="nutrition.php">Nutrition</a>
+                <a href="friends.php">Friends</a>
+                <a href="api/logout.php">Log out</a>
+            </nav>
+        </header>
 
-    <div class="container">
-        <div class="page-head">
-            <h2>Profile</h2>
-            <p>Update how you're identified across GymTrack.</p>
-        </div>
+        <main>
+            <div class="top">
+                <h1 id="pageName"><?php echo gt_e($user['username']); ?></h1>
+                <p class="lede">Your account. Update your name, username and password here.</p>
+            </div>
 
-        <div class="message" id="profileMessage"></div>
-
-        <!-- Display name + username -->
-        <div class="panel">
-            <p class="panel-title">Profile details</p>
-            <p class="panel-subtitle">Your first name shows up in the dashboard greeting; your username is what you log in with.</p>
-
-            <form id="profileForm">
-                <div class="field-row">
-                    <div class="form-group">
-                        <label for="first_name">First name</label>
-                        <input type="text" id="first_name" value="<?php echo htmlspecialchars($user['first_name'] ?? ''); ?>" placeholder="First name">
+            <section class="sec">
+                <h2>Profile details</h2>
+                <p class="sub">Your username is what you log in with. Your name is optional.</p>
+                <div class="msg" id="profileMessage" role="status" aria-live="polite" hidden></div>
+                <form id="profileForm">
+                    <div class="two">
+                        <div class="field"><label for="first_name">First name</label><input type="text" id="first_name"
+                                value="<?php echo gt_e($user['first_name'] ?? ''); ?>" autocomplete="given-name"></div>
+                        <div class="field"><label for="last_name">Last name</label><input type="text" id="last_name"
+                                value="<?php echo gt_e($user['last_name'] ?? ''); ?>" autocomplete="family-name"></div>
                     </div>
-                    <div class="form-group">
-                        <label for="last_name">Last name</label>
-                        <input type="text" id="last_name" value="<?php echo htmlspecialchars($user['last_name'] ?? ''); ?>" placeholder="Last name">
+                    <div class="field">
+                        <label for="username">Username</label>
+                        <input type="text" id="username" value="<?php echo gt_e($user['username']); ?>" required
+                            minlength="3" maxlength="50" pattern="[A-Za-z0-9_]+" autocomplete="username"
+                            aria-describedby="unameHint">
+                        <p class="hint" id="unameHint">3 to 50 letters, numbers or underscores.</p>
                     </div>
-                </div>
+                    <button type="submit" class="btn" id="profileSaveBtn">Save changes</button>
+                </form>
+            </section>
 
-                <div class="form-group">
-                    <label for="username">Username</label>
-                    <input type="text" id="username" value="<?php echo htmlspecialchars($user['username']); ?>" required>
-                    <p class="hint">Letters, numbers, and underscores only. You'll use this to log in.</p>
-                </div>
-
-                <button type="submit" class="save-btn" id="profileSaveBtn">Save changes</button>
-            </form>
-        </div>
-
-        <!-- Password -->
-        <div class="panel">
-            <p class="panel-title">Change password</p>
-            <p class="panel-subtitle">You'll need your current password to set a new one.</p>
-
-            <div class="message" id="passwordMessage"></div>
-
-            <form id="passwordForm">
-                <div class="form-group">
-                    <label for="current_password">Current password</label>
-                    <input type="password" id="current_password" required autocomplete="current-password">
-                </div>
-                <div class="form-group">
-                    <label for="new_password">New password</label>
-                    <input type="password" id="new_password" required autocomplete="new-password">
-                    <p class="hint">At least 8 characters.</p>
-                </div>
-                <div class="form-group">
-                    <label for="confirm_password">Confirm new password</label>
-                    <input type="password" id="confirm_password" required autocomplete="new-password">
-                </div>
-
-                <button type="submit" class="save-btn" id="passwordSaveBtn">Update password</button>
-            </form>
-        </div>
+            <section class="sec">
+                <h2>Change password</h2>
+                <p class="sub">Enter your current password first, then choose a new one.</p>
+                <div class="msg" id="passwordMessage" role="status" aria-live="polite" hidden></div>
+                <form id="passwordForm">
+                    <div class="field"><label for="current_password">Current password</label><input type="password"
+                            id="current_password" required autocomplete="current-password"></div>
+                    <div class="field"><label for="new_password">New password</label><input type="password"
+                            id="new_password" required minlength="8" autocomplete="new-password"
+                            aria-describedby="pwHint">
+                        <p class="hint" id="pwHint">At least 8 characters.</p>
+                    </div>
+                    <div class="field"><label for="confirm_password">Confirm new password</label><input type="password"
+                            id="confirm_password" required minlength="8" autocomplete="new-password"></div>
+                    <label class="show"><input type="checkbox" id="showPw"> Show passwords</label>
+                    <button type="submit" class="btn" id="passwordSaveBtn">Update password</button>
+                </form>
+            </section>
+        </main>
+        <footer></footer>
     </div>
 
     <script>
-        const navToggle = document.getElementById('navToggle');
-        const navMenu = document.getElementById('navMenu');
-
-        if (navToggle && navMenu) {
-            navToggle.addEventListener('click', () => navMenu.classList.toggle('is-open'));
-            document.addEventListener('click', (e) => {
-                if (!navToggle.contains(e.target) && !navMenu.contains(e.target)) {
-                    navMenu.classList.remove('is-open');
-                }
-            });
+        const $ = id => document.getElementById(id);
+        function say(el, text, kind) { el.textContent = text; el.className = 'msg' + (kind === 'err' ? ' err' : ''); el.hidden = false; }
+        function post(url, body) {
+            return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+                .then(r => r.text())
+                .then(t => { try { return JSON.parse(t); } catch (e) { throw new Error('bad response'); } });
         }
+        const NET = 'Could not reach the server, or it sent back something unexpected. Nothing was changed.';
 
-        function showMessage(el, text, type) {
-            el.textContent = text;
-            el.className = 'message show ' + type;
-        }
-
-        // ---------- Profile details (name + username) ----------
-        const profileForm = document.getElementById('profileForm');
-        const profileMessage = document.getElementById('profileMessage');
-        const profileSaveBtn = document.getElementById('profileSaveBtn');
-
-        profileForm.addEventListener('submit', function (e) {
+        // ---------- Profile details ----------
+        $('profileForm').addEventListener('submit', function (e) {
             e.preventDefault();
-            profileSaveBtn.disabled = true;
-
-            fetch('api/update-profile.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    first_name: document.getElementById('first_name').value.trim(),
-                    last_name: document.getElementById('last_name').value.trim(),
-                    username: document.getElementById('username').value.trim(),
-                })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    showMessage(profileMessage, 'Profile updated!', 'success');
-                } else {
-                    showMessage(profileMessage, data.error || 'Could not save changes.', 'error');
-                }
-            })
-            .catch(() => showMessage(profileMessage, 'Could not reach the server.', 'error'))
-            .finally(() => { profileSaveBtn.disabled = false; });
+            const btn = $('profileSaveBtn'), msg = $('profileMessage');
+            const username = $('username').value.trim();
+            btn.disabled = true;
+            post('api/update-profile.php', {
+                first_name: $('first_name').value.trim(),
+                last_name: $('last_name').value.trim(),
+                username: username
+            }).then(d => {
+                if (d.success) { say(msg, 'Profile saved.', 'ok'); $('pageName').textContent = username; }
+                else say(msg, d.error || 'Could not save changes.', 'err');
+            }).catch(() => say(msg, NET, 'err')).finally(() => { btn.disabled = false; });
         });
 
         // ---------- Password ----------
-        const passwordForm = document.getElementById('passwordForm');
-        const passwordMessage = document.getElementById('passwordMessage');
-        const passwordSaveBtn = document.getElementById('passwordSaveBtn');
+        $('showPw').addEventListener('change', function () {
+            ['current_password', 'new_password', 'confirm_password'].forEach(id => { $(id).type = this.checked ? 'text' : 'password'; });
+        });
 
-        passwordForm.addEventListener('submit', function (e) {
+        $('passwordForm').addEventListener('submit', function (e) {
             e.preventDefault();
-
-            const newPw = document.getElementById('new_password').value;
-            const confirmPw = document.getElementById('confirm_password').value;
-
-            if (newPw !== confirmPw) {
-                showMessage(passwordMessage, 'New passwords do not match.', 'error');
-                return;
-            }
-
-            passwordSaveBtn.disabled = true;
-
-            fetch('api/update-password.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    current_password: document.getElementById('current_password').value,
-                    new_password: newPw,
-                    confirm_password: confirmPw,
+            const btn = $('passwordSaveBtn'), msg = $('passwordMessage');
+            const cur = $('current_password').value, nw = $('new_password').value, cf = $('confirm_password').value;
+            if (nw !== cf) { say(msg, 'The new passwords don\u2019t match. Type the same password in both boxes.', 'err'); $('confirm_password').focus(); return; }
+            btn.disabled = true;
+            post('api/update-password.php', { current_password: cur, new_password: nw, confirm_password: cf })
+                .then(d => {
+                    if (d.success) { say(msg, 'Password updated.', 'ok'); this.reset(); $('showPw').dispatchEvent(new Event('change')); }
+                    else say(msg, d.error || 'Could not update the password. Check your current password and try again.', 'err');
                 })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    showMessage(passwordMessage, 'Password updated!', 'success');
-                    passwordForm.reset();
-                } else {
-                    showMessage(passwordMessage, data.error || 'Could not update password.', 'error');
-                }
-            })
-            .catch(() => showMessage(passwordMessage, 'Could not reach the server.', 'error'))
-            .finally(() => { passwordSaveBtn.disabled = false; });
+                .catch(() => say(msg, NET, 'err'))
+                .finally(() => { btn.disabled = false; });
         });
     </script>
 </body>
+
 </html>
