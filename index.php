@@ -18,6 +18,7 @@ if (!empty($uid)) {
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <script src="assets/theme.js"></script>
     <title>GymTrack | Beat what you lifted last time</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -654,7 +655,7 @@ if (!empty($uid)) {
     </div>
 
     <script>
-        const D = { 25: ['var(--red)', 150, 26], 20: ['var(--blue)', 150, 24], 15: ['var(--yellow)', 150, 20, '#1D2024'], 10: ['var(--green)', 150, 16], 5: ['var(--white)', 118, 12, '#1D2024'], 2.5: ['var(--black)', 90, 10] };
+        const D = { 25: ['#D3302B', 150, 26], 20: ['#1F4FCC', 150, 24], 15: ['var(--yellow)', 150, 20, '#1D2024'], 10: ['#1F8A4D', 150, 16], 5: ['var(--white)', 118, 12, '#1D2024'], 2.5: ['var(--black)', 90, 10] };
         let load = [], reps = 5, rows = [{ kg: 40, r: 8, w: 1 }, { kg: 60, r: 5, w: 0 }];
         const $ = id => document.getElementById(id);
         const plate = k => { const [c, h, w, t] = D[k]; return `<div class="p" style="--c:${c};--h:${h}px;--w:${w};${t ? '--t:' + t : ''}">${k}</div>` };

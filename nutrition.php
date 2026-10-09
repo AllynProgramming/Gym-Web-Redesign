@@ -21,7 +21,7 @@ $prevDate = (new DateTime($logDate))->modify('-1 day')->format('Y-m-d');
 $nextDate = (new DateTime($logDate))->modify('+1 day')->format('Y-m-d');
 $isToday = $logDate === date('Y-m-d');
 
-// This user's goals (create a default row on the fly if they've never set one)
+// This user's goals (default values if they've never set any)
 $stmt = $conn->prepare("SELECT calories, protein, carbs, fat, height_cm, weight_kg, age, sex, activity_level, goal_type, target_weight_kg FROM nutrition_goals WHERE user_id = ?");
 $stmt->bind_param("i", $userId);
 $stmt->execute();
@@ -30,9 +30,17 @@ $stmt->close();
 
 if (!$goals) {
     $goals = [
-        'calories' => 2000, 'protein' => 150, 'carbs' => 200, 'fat' => 65,
-        'height_cm' => null, 'weight_kg' => null, 'age' => null, 'sex' => null,
-        'activity_level' => 'moderate', 'goal_type' => 'maintain', 'target_weight_kg' => null,
+        'calories' => 2000,
+        'protein' => 150,
+        'carbs' => 200,
+        'fat' => 65,
+        'height_cm' => null,
+        'weight_kg' => null,
+        'age' => null,
+        'sex' => null,
+        'activity_level' => 'moderate',
+        'goal_type' => 'maintain',
+        'target_weight_kg' => null,
     ];
 }
 
@@ -74,811 +82,843 @@ $stmt->execute();
 $allFoods = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
 $stmt->close();
 
-function pct($value, $goal) {
-    if ($goal <= 0) return 0;
+function pct($value, $goal)
+{
+    if ($goal <= 0)
+        return 0;
     return max(0, min(100, round(($value / $goal) * 100)));
+}
+
+// ---- View data (display only) ----
+$goalRows = [
+    'calories' => ['label' => 'Calories', 'unit' => ' kcal', 'color' => 'var(--blue)'],
+    'protein' => ['label' => 'Protein', 'unit' => ' g', 'color' => 'var(--green)'],
+    'carbs' => ['label' => 'Carbs', 'unit' => ' g', 'color' => 'var(--yellow)'],
+    'fat' => ['label' => 'Fat', 'unit' => ' g', 'color' => 'var(--red)'],
+];
+$activityOptions = [
+    'sedentary' => 'Sedentary: little or no exercise',
+    'light' => 'Light: 1 to 3 days a week',
+    'moderate' => 'Moderate: 3 to 5 days a week',
+    'active' => 'Active: 6 to 7 days a week',
+    'very_active' => 'Very active: physical job and training',
+];
+$currentActivity = $goals['activity_level'] ?? 'moderate';
+$currentGoal = $goals['goal_type'] ?? 'maintain';
+function gt_e($s)
+{
+    return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Nutrition - Personal GymTracker </title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <script src="assets/theme.js"></script>
+    <title>Nutrition | GymTrack</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..900&family=Newsreader:opsz,wght@6..72,400..600&display=swap"
+        rel="stylesheet">
     <style>
         :root {
-            color-scheme: dark;
-            --bg-dark: #05030a;
-            --panel: rgba(15, 8, 28, 0.95);
-            --panel-2: rgba(20, 12, 40, 0.98);
-            --text-main: #f6f7ff;
-            --text-muted: #adb2d4;
-            --border: rgba(151, 109, 222, 0.22);
-            --cal: #a755ff;
-            --protein: #4fd6ac;
-            --carbs: #ffb454;
-            --fat: #ff7ab8;
+            --bg: #ECEEEA;
+            --surface: #F7F8F5;
+            --ink: #1D2024;
+            --muted: #5B6168;
+            --rule: #C9CEC9;
+            --accent: #1F4FCC;
+            --on-accent: #fff;
+            --err: #B3261E;
+            --red: #D3302B;
+            --blue: #1F4FCC;
+            --yellow: #EDBE2B;
+            --green: #1F8A4D;
+            --head: "Archivo", Arial, sans-serif;
+            --body: "Newsreader", Georgia, serif;
+            box-sizing: border-box
         }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @media (prefers-color-scheme:dark) {
+            :root {
+                --bg: #16181B;
+                --surface: #1E2125;
+                --ink: #E8EAE6;
+                --muted: #9AA0A6;
+                --rule: #34383D;
+                --accent: #6C93FF;
+                --on-accent: #0F1216;
+                --err: #FF8A80;
+                --red: #E5524C;
+                --blue: #6C93FF;
+                --green: #3DB070
+            }
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: inherit
+        }
 
         body {
-            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            min-height: 100vh;
-            background:
-                radial-gradient(circle at top left, rgba(120, 81, 169, 0.18), transparent 20%),
-                radial-gradient(circle at bottom right, rgba(120, 81, 169, 0.12), transparent 18%),
-                var(--bg-dark);
-            color: var(--text-main);
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font: 400 1.125rem/1.55 var(--body);
+            padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px)
         }
 
-        /* ---------- Navbar ---------- */
-        .navbar {
-            background: rgba(5, 5, 15, 0.96);
-            border-bottom: 1px solid rgba(151, 109, 222, 0.2);
-            padding: 22px 32px;
+        :focus-visible {
+            outline: 3px solid var(--accent);
+            outline-offset: 3px
+        }
+
+        a {
+            color: inherit
+        }
+
+        .wrap {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 0 clamp(1.1rem, 4vw, 2rem)
+        }
+
+        header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 16px;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            backdrop-filter: blur(16px);
+            gap: 1rem 2rem;
+            flex-wrap: wrap;
+            padding: 1.2rem 0;
+            border-bottom: 1px solid var(--rule)
         }
 
-        .navbar h1 { font-size: 1.9rem; letter-spacing: 0.03em; }
-
-        .nav-toggle {
-            display: none;
-            align-items: center;
-            justify-content: center;
-            width: 46px;
-            height: 46px;
-            border: 1px solid rgba(151, 109, 222, 0.3);
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.06);
-            color: #fff;
-            cursor: pointer;
+        .logo {
+            font: 800 1.25rem var(--head);
+            font-stretch: 112%;
+            text-decoration: none
         }
 
-        .barbell-icon { display: inline-flex; align-items: center; gap: 4px; }
-        .barbell-icon .bar { width: 18px; height: 4px; border-radius: 999px; background: linear-gradient(90deg, #fff, #c284ff); box-shadow: 0 0 12px rgba(194, 132, 255, 0.3); }
-        .barbell-icon .plate { width: 8px; height: 12px; border-radius: 999px; background: linear-gradient(135deg, #a755ff, #7a3ecf); border: 1px solid rgba(255, 255, 255, 0.28); box-shadow: inset 0 0 4px rgba(255, 255, 255, 0.2); }
-
-        .navbar-right { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-
-        .navbar-right a {
-            color: var(--text-main);
-            text-decoration: none;
-            padding: 10px 16px;
-            border-radius: 999px;
-            transition: background 0.3s ease;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            font-weight: 600;
-            font-size: 0.92rem;
-        }
-
-        .navbar-right a:hover { background: rgba(120, 81, 169, 0.18); }
-
-        /* ---------- Layout ---------- */
-        .container { max-width: 720px; margin: 0 auto; padding: 32px 24px 60px; }
-
-        .date-nav {
+        nav {
             display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 14px;
-            margin-bottom: 22px;
+            gap: .3rem 1.4rem;
+            flex-wrap: wrap;
+            font: 600 .95rem var(--head)
         }
 
-        .date-nav a {
-            width: 38px; height: 38px;
-            display: grid; place-items: center;
-            border-radius: 50%;
-            background: var(--panel);
-            border: 1px solid var(--border);
-            color: var(--text-main);
+        nav a {
             text-decoration: none;
-            font-size: 1.1rem;
-        }
-        .date-nav a:hover { background: rgba(151, 109, 222, 0.18); }
-
-        .date-nav .date-label { font-size: 1.15rem; font-weight: 700; min-width: 160px; text-align: center; }
-        .date-nav .today-tag { font-size: 0.75rem; color: var(--text-muted); display: block; font-weight: 400; }
-
-        .panel {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 22px;
-            padding: 24px;
-            margin-bottom: 20px;
-            box-shadow: 0 16px 34px rgba(0, 0, 0, 0.2);
+            padding: .3rem 0
         }
 
-        .panel-title { font-size: 1.05rem; font-weight: 700; margin-bottom: 4px; color: #fff; }
-
-        .message {
-            padding: 11px 14px;
-            border-radius: 12px;
-            font-weight: 600;
-            font-size: 0.88rem;
-            margin-bottom: 16px;
-            display: none;
-        }
-        .message.show { display: block; }
-        .message.success { background: rgba(151, 109, 222, 0.14); border: 1px solid rgba(151, 109, 222, 0.3); color: #e7d6ff; }
-        .message.error { background: rgba(255, 94, 94, 0.16); border: 1px solid rgba(255, 94, 94, 0.24); color: #ffd7d7; }
-
-        /* ---------- Goal progress bars ---------- */
-        .goal-row { margin-bottom: 16px; }
-        .goal-row:last-child { margin-bottom: 0; }
-
-        .goal-head { display: flex; justify-content: space-between; font-size: 0.88rem; margin-bottom: 6px; }
-        .goal-head strong { color: #fff; }
-        .goal-head span { color: var(--text-muted); }
-
-        .goal-bar-track { height: 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); overflow: hidden; }
-        .goal-bar-fill { height: 100%; border-radius: 999px; transition: width 0.4s ease; }
-
-        .goal-row.calories .goal-bar-fill { background: var(--cal); }
-        .goal-row.protein .goal-bar-fill { background: var(--protein); }
-        .goal-row.carbs .goal-bar-fill { background: var(--carbs); }
-        .goal-row.fat .goal-bar-fill { background: var(--fat); }
-
-        .edit-goals-toggle {
-            font-size: 0.82rem;
-            color: var(--text-muted);
-            background: none;
-            border: none;
-            cursor: pointer;
+        nav a:hover,
+        .days a:hover {
             text-decoration: underline;
-            margin-top: 14px;
+            text-underline-offset: 4px
         }
-        .edit-goals-toggle:hover { color: var(--text-main); }
 
-        .goals-form { display: none; margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(151, 109, 222, 0.15); }
-        .goals-form.show { display: block; }
-
-        .goals-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }
-        .goals-grid .form-group { display: grid; gap: 5px; }
-        .goals-grid label { font-size: 0.78rem; color: var(--text-muted); font-weight: 600; }
-
-        input, select {
-            width: 100%;
-            padding: 10px 12px;
-            min-height: 42px;
-            border-radius: 10px;
-            border: 1px solid rgba(151, 109, 222, 0.22);
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--text-main);
-            font-size: 0.9rem;
-            font-family: inherit;
+        .top {
+            padding: 2rem 0 .6rem
         }
-        input:focus, select:focus { outline: none; border-color: rgba(155, 106, 240, 0.8); box-shadow: 0 0 0 3px rgba(155, 106, 240, 0.16); }
-        select option { background: #14092b; color: #fff; }
 
-        .btn-small {
-            padding: 9px 18px;
-            min-height: 38px;
-            border: none;
-            border-radius: 999px;
-            background: linear-gradient(135deg, #a755ff 0%, #7d3fd0 55%, #632a9f 100%);
-            color: #fff;
-            font-weight: 700;
-            font-size: 0.85rem;
+        h1 {
+            font: 850 clamp(2rem, 6vw, 3.2rem)/1.02 var(--head);
+            font-stretch: 118%;
+            letter-spacing: -.025em;
+            margin: 0 0 .6rem
+        }
+
+        .days {
+            display: flex;
+            gap: .4rem 1.4rem;
+            flex-wrap: wrap;
+            font: 600 .95rem var(--head)
+        }
+
+        .btn {
+            display: inline-block;
+            background: var(--accent);
+            color: var(--on-accent);
+            font: 700 1rem var(--head);
+            padding: .75rem 1.3rem;
+            border: 0;
+            border-radius: 6px;
+            text-decoration: none;
             cursor: pointer;
+            min-height: 2.8rem
         }
-        .btn-small:disabled { opacity: 0.6; cursor: not-allowed; }
 
-        /* ---------- Meal sections ---------- */
-        .meal-panel { margin-bottom: 16px; }
-        .meal-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
-        .meal-head h4 { font-size: 1rem; }
-        .meal-head span { color: var(--text-muted); font-size: 0.85rem; }
+        .btn.alt {
+            background: transparent;
+            color: var(--ink);
+            box-shadow: inset 0 0 0 2px var(--ink)
+        }
 
-        .food-entry {
+        .btn[disabled] {
+            opacity: .6;
+            cursor: wait
+        }
+
+        .msg {
+            margin: 1rem 0 0;
+            padding: .75rem 1rem;
+            border-radius: 6px;
+            font: 600 1rem var(--head);
+            background: var(--surface);
+            box-shadow: inset 0 0 0 1px var(--rule)
+        }
+
+        .msg.err {
+            color: var(--err);
+            box-shadow: inset 0 0 0 2px var(--err)
+        }
+
+        .msg[hidden] {
+            display: none
+        }
+
+        .sec {
+            padding: 1.8rem 0;
+            border-top: 1px solid var(--rule);
+            margin-top: 1.4rem
+        }
+
+        .sec>h2,
+        .meal h2 {
+            font: 750 1.2rem var(--head);
+            margin: 0 0 .8rem
+        }
+
+        .mac {
+            display: grid;
+            grid-template-columns: 6rem 1fr 12rem;
+            gap: 1rem;
+            align-items: center;
+            padding: .7rem 0;
+            border-bottom: 1px solid var(--rule)
+        }
+
+        .mac span {
+            font: 600 1rem var(--head)
+        }
+
+        .mac em {
+            font-style: normal;
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            color: var(--muted)
+        }
+
+        .mac em b {
+            color: var(--ink);
+            font-family: var(--head)
+        }
+
+        .track {
+            height: 12px;
+            background: var(--surface);
+            border-radius: 6px;
+            box-shadow: inset 0 0 0 1px var(--rule);
+            overflow: hidden
+        }
+
+        .track i {
+            display: block;
+            height: 100%;
+            background: var(--c);
+            border-radius: 6px
+        }
+
+        .meal {
+            padding: 1.5rem 0;
+            border-top: 2px solid var(--ink);
+            margin-top: 1.4rem
+        }
+
+        .meal .mh {
             display: flex;
             justify-content: space-between;
+            align-items: baseline;
+            gap: 1rem
+        }
+
+        .meal .mh span {
+            font: 600 .95rem var(--head);
+            color: var(--muted);
+            font-variant-numeric: tabular-nums
+        }
+
+        .meal ul {
+            list-style: none;
+            margin: 0 0 .8rem;
+            padding: 0
+        }
+
+        .meal li {
+            display: grid;
+            grid-template-columns: 1fr auto 2.4rem;
+            gap: .8rem;
             align-items: center;
-            gap: 10px;
-            padding: 10px 12px;
-            background: var(--panel-2);
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            margin-bottom: 8px;
+            padding: .6rem 0;
+            border-bottom: 1px solid var(--rule)
         }
-        .food-entry-info strong { display: block; font-size: 0.9rem; }
-        .food-entry-info span { color: var(--text-muted); font-size: 0.78rem; }
-        .food-entry-macros { text-align: right; font-size: 0.8rem; color: var(--text-muted); flex-shrink: 0; }
-        .food-entry-macros strong { color: #d8b8ff; }
 
-        .remove-entry-btn {
-            background: rgba(255, 94, 94, 0.1);
-            border: 1px solid rgba(255, 94, 94, 0.28);
-            color: #ffb3b3;
-            width: 26px; height: 26px;
-            border-radius: 50%;
-            font-size: 0.9rem;
-            cursor: pointer;
-            flex-shrink: 0;
+        .meal li .n {
+            font: 700 1rem var(--head)
         }
-        .remove-entry-btn:hover { background: rgba(255, 94, 94, 0.2); }
 
-        .add-food-btn {
+        .meal li .n small {
+            display: block;
+            font: 400 .95rem var(--body);
+            color: var(--muted)
+        }
+
+        .meal li .m {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            font-size: .95rem;
+            color: var(--muted)
+        }
+
+        .meal li .m b {
+            color: var(--ink);
+            font-family: var(--head);
+            display: block
+        }
+
+        .x {
+            border: 0;
+            background: transparent;
+            color: var(--muted);
+            font: 700 1.3rem/1 var(--head);
+            width: 2.4rem;
+            height: 2.4rem;
+            border-radius: 6px;
+            cursor: pointer
+        }
+
+        .x:hover {
+            color: var(--err);
+            box-shadow: inset 0 0 0 1.5px var(--err)
+        }
+
+        .empty {
+            color: var(--muted);
+            margin: 0 0 .8rem
+        }
+
+        .addfood {
             width: 100%;
-            padding: 10px 0;
-            min-height: 40px;
-            background: rgba(151, 109, 222, 0.1);
-            border: 1px dashed rgba(155, 106, 240, 0.4);
-            color: #d8b8ff;
-            border-radius: 12px;
-            font-weight: 700;
-            font-size: 0.85rem;
+            background: transparent;
+            color: var(--ink);
+            font: 700 .95rem var(--head);
+            border: 2px dashed var(--rule);
+            border-radius: 6px;
+            min-height: 2.8rem;
+            cursor: pointer
+        }
+
+        .addfood:hover {
+            border-color: var(--ink)
+        }
+
+        details {
+            border-top: 1px solid var(--rule);
+            padding: 1.1rem 0
+        }
+
+        details>summary {
+            font: 750 1.1rem var(--head);
             cursor: pointer;
-        }
-        .add-food-btn:hover { background: rgba(151, 109, 222, 0.18); }
-
-        .empty-note { color: var(--text-muted); font-size: 0.85rem; padding: 4px 0 10px; }
-
-        /* ---------- Add-food modal ---------- */
-        .modal-backdrop {
-            display: none;
-            position: fixed; inset: 0;
-            background: rgba(5, 3, 10, 0.72);
-            backdrop-filter: blur(6px);
-            z-index: 50;
-            align-items: center; justify-content: center;
-            padding: 20px;
-        }
-        .modal-backdrop.is-open { display: flex; }
-
-        .modal-panel {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 22px;
-            max-width: 420px; width: 100%;
-            max-height: 88vh;
-            overflow-y: auto;
-            padding: 24px;
+            list-style: none;
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem
         }
 
-        .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-        .modal-head h3 { font-size: 1.1rem; }
-        .modal-close {
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: var(--text-main);
-            width: 30px; height: 30px;
-            border-radius: 50%;
-            font-size: 1rem;
-            cursor: pointer;
+        details>summary::-webkit-details-marker {
+            display: none
         }
 
-        .macro-preview {
+        details>summary::after {
+            content: "Show";
+            font: 600 .9rem var(--head);
+            color: var(--muted)
+        }
+
+        details[open]>summary::after {
+            content: "Hide"
+        }
+
+        details .in {
+            padding-top: 1rem
+        }
+
+        .grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 8px;
-            margin: 14px 0;
-            padding: 12px;
-            background: var(--panel-2);
-            border-radius: 12px;
-            border: 1px solid var(--border);
-        }
-        .macro-preview div { text-align: center; }
-        .macro-preview strong { display: block; font-size: 1rem; }
-        .macro-preview span { font-size: 0.72rem; color: var(--text-muted); }
-
-        .custom-food-toggle {
-            font-size: 0.8rem;
-            color: var(--text-muted);
-            background: none; border: none;
-            text-decoration: underline;
-            cursor: pointer;
-            margin-top: 10px;
+            gap: 1rem;
+            margin-bottom: 1rem
         }
 
-        .custom-food-fields { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(151, 109, 222, 0.15); }
-        .custom-food-fields.show { display: block; }
+        .grid3 {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin-bottom: 1rem
+        }
 
-        .hidden { display: none; }
+        .field {
+            display: grid;
+            gap: .3rem;
+            align-content: start
+        }
 
-        @media (max-width: 640px) {
-            .container { padding: 20px 16px 40px; }
-            .navbar { padding: 16px 20px; }
-            .nav-toggle { display: inline-flex; }
-            .goals-grid { grid-template-columns: repeat(2, 1fr); }
+        label {
+            font: 700 .85rem var(--head)
+        }
 
-            .navbar-right {
-                display: none;
-                position: absolute;
-                top: calc(100% + 10px);
-                right: 20px; left: 20px;
-                flex-direction: column;
-                align-items: stretch;
-                padding: 14px;
-                background: rgba(5, 5, 15, 0.98);
-                border: 1px solid rgba(151, 109, 222, 0.24);
-                border-radius: 18px;
-                box-shadow: 0 16px 32px rgba(0, 0, 0, 0.24);
+        input,
+        select {
+            font: 400 1.1rem var(--body);
+            color: var(--ink);
+            background: var(--surface);
+            border: 2px solid var(--rule);
+            border-radius: 4px;
+            padding: .6rem .7rem;
+            width: 100%;
+            min-width: 0;
+            min-height: 2.8rem
+        }
+
+        input:focus,
+        select:focus {
+            outline: none;
+            border-color: var(--accent)
+        }
+
+        input:focus-visible,
+        select:focus-visible {
+            outline: 3px solid var(--accent);
+            outline-offset: 1px
+        }
+
+        .hint {
+            color: var(--muted);
+            font-size: .95rem;
+            margin: .2rem 0 1rem
+        }
+
+        dialog {
+            border: 0;
+            border-radius: 10px;
+            padding: 1.4rem;
+            max-width: 26rem;
+            width: calc(100% - 2rem);
+            max-height: 90vh;
+            background: var(--surface);
+            color: var(--ink);
+            box-shadow: 0 0 0 1px var(--rule), 0 20px 50px rgba(0, 0, 0, .3)
+        }
+
+        dialog::backdrop {
+            background: rgba(0, 0, 0, .5)
+        }
+
+        .dh {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem
+        }
+
+        .dh h2 {
+            font: 750 1.2rem var(--head);
+            margin: 0
+        }
+
+        .prev {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: .5rem;
+            margin: 1rem 0;
+            border-top: 2px solid var(--ink);
+            padding-top: .5rem
+        }
+
+        .prev div {
+            font: 600 .8rem var(--head);
+            color: var(--muted)
+        }
+
+        .prev b {
+            display: block;
+            font: 800 1.3rem var(--head);
+            color: var(--ink);
+            font-variant-numeric: tabular-nums
+        }
+
+        .sp {
+            margin-top: 1rem
+        }
+
+        footer {
+            padding: 1rem 0 3rem
+        }
+
+        @media (max-width:640px) {
+            .grid {
+                grid-template-columns: 1fr 1fr
             }
-            .navbar-right.is-open { display: flex; }
-            .navbar-right a { width: 100%; text-align: center; justify-content: center; }
+
+            .grid3 {
+                grid-template-columns: 1fr
+            }
+
+            .mac {
+                grid-template-columns: 1fr auto;
+                gap: .3rem 1rem
+            }
+
+            .mac .track {
+                grid-column: 1/-1;
+                order: 3
+            }
+
+            .meal li {
+                grid-template-columns: 1fr auto 2.2rem;
+                gap: .5rem
+            }
         }
     </style>
 </head>
+
 <body>
-    <nav class="navbar">
-        <h1>Personal GymTracker </h1>
-        <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation" type="button">
-            <span class="barbell-icon" aria-hidden="true">
-                <span class="plate"></span><span class="bar"></span><span class="plate"></span>
-            </span>
-        </button>
-        <div class="navbar-right" id="navMenu">
-            <a href="dashboard.php">Dashboard</a>
-            <a href="friends.php">Friends</a>
-            <a href="profile.php">Profile</a>
-            <a href="api/logout.php">Logout</a>
-        </div>
-    </nav>
+    <div class="wrap">
+        <header>
+            <a class="logo" href="dashboard.php">GymTrack</a>
+            <nav aria-label="Main">
+                <a href="dashboard.php">Dashboard</a>
+                <a href="log-workout.php">Log workout</a>
+                <a href="profile.php">Profile</a>
+                <a href="friends.php">Friends</a>
+                <a href="api/logout.php">Log out</a>
+            </nav>
+        </header>
 
-    <div class="container">
-        <div class="date-nav">
-            <a href="nutrition.php?date=<?php echo $prevDate; ?>">‹</a>
-            <div class="date-label">
-                <?php echo date('l, M j', strtotime($logDate)); ?>
-                <?php if ($isToday): ?><span class="today-tag">Today</span><?php endif; ?>
-            </div>
-            <a href="nutrition.php?date=<?php echo $nextDate; ?>">›</a>
-        </div>
-
-        <div class="message" id="pageMessage"></div>
-
-        <!-- Goals + totals -->
-        <div class="panel">
-            <p class="panel-title">Today's totals</p>
-
-            <?php
-                $goalRows = [
-                    'calories' => ['label' => 'Calories', 'unit' => 'kcal'],
-                    'protein' => ['label' => 'Protein', 'unit' => 'g'],
-                    'carbs' => ['label' => 'Carbs', 'unit' => 'g'],
-                    'fat' => ['label' => 'Fat', 'unit' => 'g'],
-                ];
-            ?>
-            <?php foreach ($goalRows as $key => $meta): ?>
-                <div class="goal-row <?php echo $key; ?>">
-                    <div class="goal-head">
-                        <strong><?php echo $meta['label']; ?></strong>
-                        <span><?php echo round($totals[$key]); ?> / <?php echo $goals[$key]; ?> <?php echo $meta['unit']; ?></span>
-                    </div>
-                    <div class="goal-bar-track">
-                        <div class="goal-bar-fill" style="width: <?php echo pct($totals[$key], $goals[$key]); ?>%;"></div>
-                    </div>
+        <main>
+            <div class="top">
+                <h1><?php echo gt_e(date('l, M j', strtotime($logDate))); ?></h1>
+                <div class="days">
+                    <a href="nutrition.php?date=<?php echo gt_e($prevDate); ?>">Previous day</a>
+                    <?php if (!$isToday): ?><a href="nutrition.php">Back to today</a><?php endif; ?>
+                    <a href="nutrition.php?date=<?php echo gt_e($nextDate); ?>">Next day</a>
                 </div>
+                <div class="msg" id="pageMessage" role="status" aria-live="polite" hidden></div>
+            </div>
+
+            <section class="sec" style="margin-top:.6rem">
+                <h2><?php echo $isToday ? 'Today so far' : 'Totals for this day'; ?></h2>
+                <?php foreach ($goalRows as $key => $meta):
+                    $v = round($totals[$key]);
+                    $g = (float) $goals[$key];
+                    $diff = round($g - $v); ?>
+                    <div class="mac">
+                        <span><?php echo gt_e($meta['label']); ?></span>
+                        <div class="track" role="img"
+                            aria-label="<?php echo gt_e($meta['label'] . ': ' . $v . ' of ' . $g . $meta['unit']); ?>"><i
+                                style="--c:<?php echo $meta['color']; ?>;width:<?php echo pct($totals[$key], $goals[$key]); ?>%"></i>
+                        </div>
+                        <em><b><?php echo number_format($v); ?></b> of
+                            <?php echo number_format($g) . gt_e($meta['unit']); ?>,
+                            <?php echo $diff >= 0 ? number_format($diff) . ' left' : number_format(-$diff) . ' over'; ?></em>
+                    </div>
+                <?php endforeach; ?>
+            </section>
+
+            <?php foreach ($mealLabels as $mealKey => $mealLabel): ?>
+                <section class="meal">
+                    <div class="mh">
+                        <h2><?php echo gt_e($mealLabel); ?></h2>
+                        <span><?php echo number_format(round(array_sum(array_column($meals[$mealKey], 'calories')))); ?>
+                            kcal</span>
+                    </div>
+                    <?php if (empty($meals[$mealKey])): ?>
+                        <p class="empty">Nothing logged yet.</p>
+                    <?php else: ?>
+                        <ul>
+                            <?php foreach ($meals[$mealKey] as $entry): ?>
+                                <li>
+                                    <div class="n">
+                                        <?php echo gt_e($entry['food_name']); ?><small><?php echo gt_e($entry['grams']); ?>
+                                            g</small></div>
+                                    <div class="m"><b><?php echo round($entry['calories']); ?> kcal</b>P
+                                        <?php echo round($entry['protein']); ?> g, C <?php echo round($entry['carbs']); ?> g, F
+                                        <?php echo round($entry['fat']); ?> g</div>
+                                    <button type="button" class="x remove-entry" data-log-id="<?php echo (int) $entry['id']; ?>"
+                                        aria-label="Remove <?php echo gt_e($entry['food_name']); ?>">&times;</button>
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    <?php endif; ?>
+                    <button type="button" class="addfood" data-meal="<?php echo gt_e($mealKey); ?>">Add food to
+                        <?php echo gt_e(strtolower($mealLabel)); ?></button>
+                </section>
             <?php endforeach; ?>
 
-            <button type="button" class="edit-goals-toggle" id="editGoalsToggle">Edit daily goals</button>
-
-            <form class="goals-form" id="goalsForm">
-                <div class="goals-grid">
-                    <div class="form-group">
-                        <label>Calories</label>
-                        <input type="number" id="goal_calories" value="<?php echo $goals['calories']; ?>" min="0">
-                    </div>
-                    <div class="form-group">
-                        <label>Protein (g)</label>
-                        <input type="number" id="goal_protein" value="<?php echo $goals['protein']; ?>" min="0">
-                    </div>
-                    <div class="form-group">
-                        <label>Carbs (g)</label>
-                        <input type="number" id="goal_carbs" value="<?php echo $goals['carbs']; ?>" min="0">
-                    </div>
-                    <div class="form-group">
-                        <label>Fat (g)</label>
-                        <input type="number" id="goal_fat" value="<?php echo $goals['fat']; ?>" min="0">
-                    </div>
-                </div>
-                <button type="submit" class="btn-small" id="saveGoalsBtn">Save goals</button>
-            </form>
-        </div>
-
-        <!-- Body profile -> auto-calculated targets -->
-        <div class="panel">
-            <p class="panel-title">Body profile</p>
-            <p class="empty-note" style="padding:0 0 16px;">Fill this in once to auto-calculate your daily targets above. These are general estimates (Mifflin-St Jeor formula) — not medical advice; adjust the goals manually above if you know better numbers for you.</p>
-
-            <div class="message" id="bodyProfileMessage"></div>
-
-            <form id="bodyProfileForm">
-                <div class="goals-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom:12px;">
-                    <div class="form-group">
-                        <label>Height (cm)</label>
-                        <input type="number" id="bp_height" min="100" max="250" value="<?php echo htmlspecialchars($goals['height_cm'] ?? ''); ?>" placeholder="175">
-                    </div>
-                    <div class="form-group">
-                        <label>Weight (kg)</label>
-                        <input type="number" id="bp_weight" min="30" max="300" step="0.1" value="<?php echo htmlspecialchars($goals['weight_kg'] ?? ''); ?>" placeholder="75">
-                    </div>
-                    <div class="form-group">
-                        <label>Age</label>
-                        <input type="number" id="bp_age" min="13" max="100" value="<?php echo htmlspecialchars($goals['age'] ?? ''); ?>" placeholder="25">
-                    </div>
-                </div>
-
-                <div class="goals-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom:12px;">
-                    <div class="form-group">
-                        <label>Sex</label>
-                        <select id="bp_sex">
-                            <option value="">Select…</option>
-                            <option value="male" <?php echo ($goals['sex'] ?? '') === 'male' ? 'selected' : ''; ?>>Male</option>
-                            <option value="female" <?php echo ($goals['sex'] ?? '') === 'female' ? 'selected' : ''; ?>>Female</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Activity level</label>
-                        <select id="bp_activity">
-                            <?php
-                                $activityOptions = [
-                                    'sedentary' => 'Sedentary (little/no exercise)',
-                                    'light' => 'Light (1-3 days/week)',
-                                    'moderate' => 'Moderate (3-5 days/week)',
-                                    'active' => 'Active (6-7 days/week)',
-                                    'very_active' => 'Very active (physical job + training)',
-                                ];
-                                $currentActivity = $goals['activity_level'] ?? 'moderate';
-                                foreach ($activityOptions as $val => $label):
-                            ?>
-                                <option value="<?php echo $val; ?>" <?php echo $currentActivity === $val ? 'selected' : ''; ?>><?php echo $label; ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label>Goal</label>
-                        <select id="bp_goal">
-                            <?php $currentGoal = $goals['goal_type'] ?? 'maintain'; ?>
-                            <option value="cut" <?php echo $currentGoal === 'cut' ? 'selected' : ''; ?>>Cutting (lose fat)</option>
-                            <option value="maintain" <?php echo $currentGoal === 'maintain' ? 'selected' : ''; ?>>Maintaining</option>
-                            <option value="bulk" <?php echo $currentGoal === 'bulk' ? 'selected' : ''; ?>>Bulking (gain muscle)</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="form-group" style="max-width: 200px; margin-bottom:14px;">
-                    <label>Target weight (kg) — optional</label>
-                    <input type="number" id="bp_target_weight" min="30" max="300" step="0.1" value="<?php echo htmlspecialchars($goals['target_weight_kg'] ?? ''); ?>" placeholder="e.g. 80">
-                </div>
-
-                <button type="submit" class="btn-small" id="calculateGoalsBtn">Calculate my targets</button>
-            </form>
-        </div>
-
-        <!-- Meals -->
-        <?php foreach ($mealLabels as $mealKey => $mealLabel): ?>
-            <div class="panel meal-panel">
-                <div class="meal-head">
-                    <h4><?php echo $mealLabel; ?></h4>
-                    <span><?php echo round(array_sum(array_column($meals[$mealKey], 'calories'))); ?> kcal</span>
-                </div>
-
-                <div id="mealList_<?php echo $mealKey; ?>">
-                    <?php if (empty($meals[$mealKey])): ?>
-                        <p class="empty-note">Nothing logged yet.</p>
-                    <?php else: ?>
-                        <?php foreach ($meals[$mealKey] as $entry): ?>
-                            <div class="food-entry" data-log-id="<?php echo $entry['id']; ?>">
-                                <div class="food-entry-info">
-                                    <strong><?php echo htmlspecialchars($entry['food_name']); ?></strong>
-                                    <span><?php echo $entry['grams']; ?>g</span>
+            <section class="sec">
+                <details id="goalsBox">
+                    <summary>Daily goals</summary>
+                    <div class="in">
+                        <form id="goalsForm">
+                            <div class="grid">
+                                <div class="field"><label for="goal_calories">Calories</label><input type="number"
+                                        id="goal_calories" value="<?php echo gt_e($goals['calories']); ?>" min="0">
                                 </div>
-                                <div class="food-entry-macros">
-                                    <strong><?php echo round($entry['calories']); ?> kcal</strong><br>
-                                    P <?php echo round($entry['protein']); ?>g · C <?php echo round($entry['carbs']); ?>g · F <?php echo round($entry['fat']); ?>g
-                                </div>
-                                <button type="button" class="remove-entry-btn" data-log-id="<?php echo $entry['id']; ?>" aria-label="Remove">×</button>
+                                <div class="field"><label for="goal_protein">Protein (g)</label><input type="number"
+                                        id="goal_protein" value="<?php echo gt_e($goals['protein']); ?>" min="0"></div>
+                                <div class="field"><label for="goal_carbs">Carbs (g)</label><input type="number"
+                                        id="goal_carbs" value="<?php echo gt_e($goals['carbs']); ?>" min="0"></div>
+                                <div class="field"><label for="goal_fat">Fat (g)</label><input type="number"
+                                        id="goal_fat" value="<?php echo gt_e($goals['fat']); ?>" min="0"></div>
                             </div>
-                        <?php endforeach; ?>
-                    <?php endif; ?>
-                </div>
+                            <button type="submit" class="btn" id="saveGoalsBtn">Save goals</button>
+                        </form>
+                    </div>
+                </details>
 
-                <button type="button" class="add-food-btn" data-meal="<?php echo $mealKey; ?>">+ Add food to <?php echo strtolower($mealLabel); ?></button>
-            </div>
-        <?php endforeach; ?>
+                <details id="bodyBox">
+                    <summary>Work out targets from your body</summary>
+                    <div class="in">
+                        <p class="hint">Fill this in once and your daily targets are estimated for you (Mifflin-St Jeor
+                            formula). These are general estimates, not medical advice. Change the goals above if you
+                            know better numbers for you.</p>
+                        <div class="msg" id="bodyProfileMessage" role="status" aria-live="polite" hidden></div>
+                        <form id="bodyProfileForm" class="sp">
+                            <div class="grid3">
+                                <div class="field"><label for="bp_height">Height (cm)</label><input type="number"
+                                        id="bp_height" min="100" max="250"
+                                        value="<?php echo gt_e($goals['height_cm'] ?? ''); ?>" placeholder="175"></div>
+                                <div class="field"><label for="bp_weight">Weight (kg)</label><input type="number"
+                                        id="bp_weight" min="30" max="300" step="0.1"
+                                        value="<?php echo gt_e($goals['weight_kg'] ?? ''); ?>" placeholder="75"></div>
+                                <div class="field"><label for="bp_age">Age</label><input type="number" id="bp_age"
+                                        min="13" max="100" value="<?php echo gt_e($goals['age'] ?? ''); ?>"
+                                        placeholder="25"></div>
+                            </div>
+                            <div class="grid3">
+                                <div class="field"><label for="bp_sex">Sex</label>
+                                    <select id="bp_sex">
+                                        <option value="">Select</option>
+                                        <option value="male" <?php echo ($goals['sex'] ?? '') === 'male' ? 'selected' : ''; ?>>Male</option>
+                                        <option value="female" <?php echo ($goals['sex'] ?? '') === 'female' ? 'selected' : ''; ?>>Female</option>
+                                    </select>
+                                </div>
+                                <div class="field"><label for="bp_activity">Activity level</label>
+                                    <select id="bp_activity">
+                                        <?php foreach ($activityOptions as $val => $label): ?>
+                                            <option value="<?php echo gt_e($val); ?>" <?php echo $currentActivity === $val ? 'selected' : ''; ?>><?php echo gt_e($label); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="field"><label for="bp_goal">Goal</label>
+                                    <select id="bp_goal">
+                                        <option value="cut" <?php echo $currentGoal === 'cut' ? 'selected' : ''; ?>>Lose
+                                            fat</option>
+                                        <option value="maintain" <?php echo $currentGoal === 'maintain' ? 'selected' : ''; ?>>Maintain</option>
+                                        <option value="bulk" <?php echo $currentGoal === 'bulk' ? 'selected' : ''; ?>>Gain
+                                            muscle</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="field" style="max-width:14rem;margin-bottom:1rem"><label
+                                    for="bp_target_weight">Target weight (kg, optional)</label><input type="number"
+                                    id="bp_target_weight" min="30" max="300" step="0.1"
+                                    value="<?php echo gt_e($goals['target_weight_kg'] ?? ''); ?>" placeholder="80">
+                            </div>
+                            <button type="submit" class="btn" id="calculateGoalsBtn">Calculate my targets</button>
+                        </form>
+                    </div>
+                </details>
+            </section>
+        </main>
+        <footer></footer>
     </div>
 
-    <!-- Add food modal -->
-    <div class="modal-backdrop" id="addFoodBackdrop">
-        <div class="modal-panel">
-            <div class="modal-head">
-                <h3 id="addFoodMealLabel">Add food</h3>
-                <button type="button" class="modal-close" id="closeAddFoodModal">×</button>
-            </div>
-
-            <div class="message" id="modalMessage"></div>
-
-            <form id="addFoodForm">
-                <input type="hidden" id="addFoodMeal" value="">
-
-                <div class="form-group" style="margin-bottom:12px;">
-                    <label for="foodSelect">Food</label>
-                    <input type="text" id="foodSelect" list="foodOptions" placeholder="Start typing… e.g. Chicken breast" autocomplete="off">
-                    <datalist id="foodOptions">
-                        <?php foreach ($allFoods as $f): ?>
-                            <option value="<?php echo htmlspecialchars($f['name']); ?>" data-id="<?php echo $f['id']; ?>">
-                        <?php endforeach; ?>
-                    </datalist>
-                </div>
-
-                <div class="form-group" style="margin-bottom:12px;">
-                    <label for="foodGrams">Amount (grams)</label>
-                    <input type="number" id="foodGrams" min="0" step="1" placeholder="100" value="100">
-                </div>
-
-                <div class="macro-preview" id="macroPreview">
-                    <div><strong id="prevCal">—</strong><span>kcal</span></div>
-                    <div><strong id="prevProtein">—</strong><span>protein</span></div>
-                    <div><strong id="prevCarbs">—</strong><span>carbs</span></div>
-                    <div><strong id="prevFat">—</strong><span>fat</span></div>
-                </div>
-
-                <button type="button" class="custom-food-toggle" id="customFoodToggle">Can't find it? Add a custom food</button>
-
-                <div class="custom-food-fields" id="customFoodFields">
-                    <div class="form-group" style="margin-bottom:10px;">
-                        <label>Food name</label>
-                        <input type="text" id="customName" placeholder="e.g. Mom's chili">
-                    </div>
-                    <div class="goals-grid" style="margin-bottom:6px;">
-                        <div class="form-group">
-                            <label>Cal /100g</label>
-                            <input type="number" id="customCal" min="0" step="0.1">
-                        </div>
-                        <div class="form-group">
-                            <label>Protein /100g</label>
-                            <input type="number" id="customProtein" min="0" step="0.1">
-                        </div>
-                        <div class="form-group">
-                            <label>Carbs /100g</label>
-                            <input type="number" id="customCarbs" min="0" step="0.1">
-                        </div>
-                        <div class="form-group">
-                            <label>Fat /100g</label>
-                            <input type="number" id="customFat" min="0" step="0.1">
-                        </div>
-                    </div>
-                    <p class="empty-note" style="padding:0;">Saved once — you can reuse it next time just by searching its name.</p>
-                </div>
-
-                <button type="submit" class="btn-small" id="saveFoodBtn" style="width:100%; margin-top:16px;">Log it</button>
-            </form>
+    <dialog id="addFoodDialog" aria-labelledby="addFoodTitle">
+        <div class="dh">
+            <h2 id="addFoodTitle">Add food</h2><button type="button" class="x" id="closeAddFood"
+                aria-label="Close">&times;</button>
         </div>
-    </div>
+        <div class="msg" id="modalMessage" role="alert" hidden></div>
+        <form id="addFoodForm">
+            <input type="hidden" id="addFoodMeal" value="">
+            <div class="field sp">
+                <label for="foodSelect">Food</label>
+                <input type="text" id="foodSelect" list="foodOptions" placeholder="Start typing, like chicken breast"
+                    autocomplete="off">
+                <datalist id="foodOptions">
+                    <?php foreach ($allFoods as $f): ?>
+                        <option value="<?php echo gt_e($f['name']); ?>">
+                        <?php endforeach; ?>
+                </datalist>
+            </div>
+            <div class="field sp">
+                <label for="foodGrams">Amount (grams)</label>
+                <input type="number" id="foodGrams" min="0" step="any" inputmode="decimal" value="100">
+            </div>
+            <div class="prev" aria-live="polite">
+                <div><b id="prevCal">-</b>kcal</div>
+                <div><b id="prevProtein">-</b>protein</div>
+                <div><b id="prevCarbs">-</b>carbs</div>
+                <div><b id="prevFat">-</b>fat</div>
+            </div>
+            <details id="customBox" style="border-top:0;padding:0">
+                <summary style="font-size:.95rem">Can't find it? Add a custom food</summary>
+                <div class="in">
+                    <div class="field" style="margin-bottom:1rem"><label for="customName">Food name</label><input
+                            type="text" id="customName" placeholder="Mom's chili"></div>
+                    <div class="grid" style="grid-template-columns:1fr 1fr">
+                        <div class="field"><label for="customCal">Calories per 100 g</label><input type="number"
+                                id="customCal" min="0" step="0.1"></div>
+                        <div class="field"><label for="customProtein">Protein per 100 g</label><input type="number"
+                                id="customProtein" min="0" step="0.1"></div>
+                        <div class="field"><label for="customCarbs">Carbs per 100 g</label><input type="number"
+                                id="customCarbs" min="0" step="0.1"></div>
+                        <div class="field"><label for="customFat">Fat per 100 g</label><input type="number"
+                                id="customFat" min="0" step="0.1"></div>
+                    </div>
+                    <p class="hint">It is saved once, so you can find it by name next time.</p>
+                </div>
+            </details>
+            <button type="submit" class="btn sp" id="saveFoodBtn" style="width:100%">Log food</button>
+        </form>
+    </dialog>
 
     <script>
-        const navToggle = document.getElementById('navToggle');
-        const navMenu = document.getElementById('navMenu');
-        if (navToggle && navMenu) {
-            navToggle.addEventListener('click', () => navMenu.classList.toggle('is-open'));
-            document.addEventListener('click', (e) => {
-                if (!navToggle.contains(e.target) && !navMenu.contains(e.target)) navMenu.classList.remove('is-open');
-            });
-        }
-
-        // All foods (id + per-100g macros) available to the food picker
+        const $ = id => document.getElementById(id);
         const FOODS = <?php echo json_encode($allFoods); ?>;
+        const LOG_DATE = <?php echo json_encode($logDate); ?>;
         const foodByName = {};
         FOODS.forEach(f => { foodByName[f.name.toLowerCase()] = f; });
 
-        const pageMessage = document.getElementById('pageMessage');
-        function showMessage(el, text, type) {
-            el.textContent = text;
-            el.className = 'message show ' + type;
+        function say(el, text, kind) { el.textContent = text; el.className = 'msg' + (kind === 'err' ? ' err' : ''); el.hidden = false; }
+        function post(url, body) {
+            return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+                .then(r => r.text())
+                .then(t => { try { return JSON.parse(t); } catch (e) { throw new Error('bad response'); } });
         }
+        const NET = 'Could not reach the server, or it sent back something unexpected. Nothing was changed.';
 
-        // ---------- Goals editing ----------
-        const goalsForm = document.getElementById('goalsForm');
-        document.getElementById('editGoalsToggle').addEventListener('click', () => {
-            goalsForm.classList.toggle('show');
-        });
-
-        goalsForm.addEventListener('submit', function (e) {
+        // ---------- Edit goals ----------
+        $('goalsForm').addEventListener('submit', function (e) {
             e.preventDefault();
-            const btn = document.getElementById('saveGoalsBtn');
-            btn.disabled = true;
-
-            fetch('api/update-nutrition-goals.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    calories: document.getElementById('goal_calories').value,
-                    protein: document.getElementById('goal_protein').value,
-                    carbs: document.getElementById('goal_carbs').value,
-                    fat: document.getElementById('goal_fat').value,
-                })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    showMessage(pageMessage, 'Goals updated!', 'success');
-                    setTimeout(() => location.reload(), 700);
-                } else {
-                    showMessage(pageMessage, data.error || 'Could not save goals.', 'error');
-                    btn.disabled = false;
-                }
-            })
-            .catch(() => { showMessage(pageMessage, 'Could not reach the server.', 'error'); btn.disabled = false; });
+            const btn = $('saveGoalsBtn'); btn.disabled = true;
+            post('api/update-nutrition-goals.php', {
+                calories: $('goal_calories').value, protein: $('goal_protein').value,
+                carbs: $('goal_carbs').value, fat: $('goal_fat').value
+            }).then(d => {
+                if (d.success) { say($('pageMessage'), 'Goals saved.', 'ok'); setTimeout(() => location.reload(), 700); }
+                else { say($('pageMessage'), d.error || 'Could not save goals.', 'err'); btn.disabled = false; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+            }).catch(() => { say($('pageMessage'), NET, 'err'); btn.disabled = false; });
         });
 
-        // ---------- Body profile -> auto-calculate targets ----------
-        const bodyProfileForm = document.getElementById('bodyProfileForm');
-        const bodyProfileMessage = document.getElementById('bodyProfileMessage');
-
-        bodyProfileForm.addEventListener('submit', function (e) {
+        // ---------- Body profile -> targets ----------
+        $('bodyProfileForm').addEventListener('submit', function (e) {
             e.preventDefault();
-            const btn = document.getElementById('calculateGoalsBtn');
-            btn.disabled = true;
-
-            fetch('api/calculate-nutrition-goals.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    height_cm: document.getElementById('bp_height').value,
-                    weight_kg: document.getElementById('bp_weight').value,
-                    age: document.getElementById('bp_age').value,
-                    sex: document.getElementById('bp_sex').value,
-                    activity_level: document.getElementById('bp_activity').value,
-                    goal_type: document.getElementById('bp_goal').value,
-                    target_weight_kg: document.getElementById('bp_target_weight').value,
-                })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    showMessage(bodyProfileMessage, `Targets calculated: ${data.targets.calories} kcal, ${data.targets.protein}g protein, ${data.targets.carbs}g carbs, ${data.targets.fat}g fat.`, 'success');
-                    setTimeout(() => location.reload(), 1200);
-                } else {
-                    showMessage(bodyProfileMessage, data.error || 'Could not calculate targets.', 'error');
-                    btn.disabled = false;
-                }
-            })
-            .catch(() => { showMessage(bodyProfileMessage, 'Could not reach the server.', 'error'); btn.disabled = false; });
+            const btn = $('calculateGoalsBtn'); btn.disabled = true;
+            post('api/calculate-nutrition-goals.php', {
+                height_cm: $('bp_height').value, weight_kg: $('bp_weight').value, age: $('bp_age').value,
+                sex: $('bp_sex').value, activity_level: $('bp_activity').value, goal_type: $('bp_goal').value,
+                target_weight_kg: $('bp_target_weight').value
+            }).then(d => {
+                if (d.success) {
+                    const t = d.targets;
+                    say($('bodyProfileMessage'), 'Targets set: ' + t.calories + ' kcal, ' + t.protein + ' g protein, ' + t.carbs + ' g carbs, ' + t.fat + ' g fat.', 'ok');
+                    setTimeout(() => location.reload(), 1400);
+                } else { say($('bodyProfileMessage'), d.error || 'Could not calculate targets.', 'err'); btn.disabled = false; }
+            }).catch(() => { say($('bodyProfileMessage'), NET, 'err'); btn.disabled = false; });
         });
 
-        // ---------- Add food modal ----------
-        const addFoodBackdrop = document.getElementById('addFoodBackdrop');
-        const addFoodMealInput = document.getElementById('addFoodMeal');
-        const addFoodMealLabel = document.getElementById('addFoodMealLabel');
-        const foodSelect = document.getElementById('foodSelect');
-        const foodGrams = document.getElementById('foodGrams');
-        const modalMessage = document.getElementById('modalMessage');
-        const customFoodFields = document.getElementById('customFoodFields');
+        // ---------- Add food dialog ----------
+        const dlg = $('addFoodDialog'), foodSelect = $('foodSelect'), foodGrams = $('foodGrams'), modalMsg = $('modalMessage');
+        const mealNames = { breakfast: 'breakfast', lunch: 'lunch', dinner: 'dinner', snack: 'snacks' };
 
-        const mealLabels = { breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snacks' };
-
-        document.querySelectorAll('.add-food-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                addFoodMealInput.value = btn.dataset.meal;
-                addFoodMealLabel.textContent = 'Add food to ' + mealLabels[btn.dataset.meal];
-                document.getElementById('addFoodForm').reset();
-                foodGrams.value = 100;
-                customFoodFields.classList.remove('show');
-                modalMessage.className = 'message';
-                updatePreview();
-                addFoodBackdrop.classList.add('is-open');
-                setTimeout(() => foodSelect.focus(), 50);
-            });
-        });
-
-        document.getElementById('closeAddFoodModal').addEventListener('click', () => addFoodBackdrop.classList.remove('is-open'));
-        addFoodBackdrop.addEventListener('click', (e) => { if (e.target === addFoodBackdrop) addFoodBackdrop.classList.remove('is-open'); });
-
-        document.getElementById('customFoodToggle').addEventListener('click', () => {
-            customFoodFields.classList.toggle('show');
-        });
+        document.querySelectorAll('.addfood').forEach(btn => btn.addEventListener('click', () => {
+            $('addFoodMeal').value = btn.dataset.meal;
+            $('addFoodTitle').textContent = 'Add food to ' + mealNames[btn.dataset.meal];
+            $('addFoodForm').reset();
+            foodGrams.value = 100;
+            $('customBox').open = false;
+            modalMsg.hidden = true;
+            $('saveFoodBtn').disabled = false;
+            updatePreview();
+            dlg.showModal();
+            foodSelect.focus();
+        }));
+        $('closeAddFood').addEventListener('click', () => dlg.close());
+        dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 
         function updatePreview() {
             const food = foodByName[foodSelect.value.trim().toLowerCase()];
-            const grams = parseFloat(foodGrams.value) || 0;
-
-            if (!food) {
-                document.getElementById('prevCal').textContent = '—';
-                document.getElementById('prevProtein').textContent = '—';
-                document.getElementById('prevCarbs').textContent = '—';
-                document.getElementById('prevFat').textContent = '—';
-                return;
-            }
-
-            const factor = grams / 100;
-            document.getElementById('prevCal').textContent = Math.round(food.calories_per_100g * factor);
-            document.getElementById('prevProtein').textContent = Math.round(food.protein_per_100g * factor) + 'g';
-            document.getElementById('prevCarbs').textContent = Math.round(food.carbs_per_100g * factor) + 'g';
-            document.getElementById('prevFat').textContent = Math.round(food.fat_per_100g * factor) + 'g';
+            const g = parseFloat(foodGrams.value) || 0;
+            if (!food) { ['prevCal', 'prevProtein', 'prevCarbs', 'prevFat'].forEach(id => $(id).textContent = '-'); return; }
+            const k = g / 100;
+            $('prevCal').textContent = Math.round(food.calories_per_100g * k);
+            $('prevProtein').textContent = Math.round(food.protein_per_100g * k) + ' g';
+            $('prevCarbs').textContent = Math.round(food.carbs_per_100g * k) + ' g';
+            $('prevFat').textContent = Math.round(food.fat_per_100g * k) + ' g';
         }
-
         foodSelect.addEventListener('input', updatePreview);
         foodGrams.addEventListener('input', updatePreview);
+        $('customBox').addEventListener('toggle', function () {
+            if (this.open && !$('customName').value) $('customName').value = foodSelect.value.trim();
+        });
 
-        // ---------- Submit: log a food (existing or newly-defined custom food) ----------
-        document.getElementById('addFoodForm').addEventListener('submit', function (e) {
+        $('addFoodForm').addEventListener('submit', function (e) {
             e.preventDefault();
-            const btn = document.getElementById('saveFoodBtn');
             const grams = parseFloat(foodGrams.value);
+            if (!grams || grams <= 0) { say(modalMsg, 'Enter an amount in grams greater than zero.', 'err'); return; }
 
-            if (!grams || grams <= 0) {
-                showMessage(modalMessage, 'Enter a valid amount in grams.', 'error');
-                return;
-            }
+            const existing = foodByName[foodSelect.value.trim().toLowerCase()];
+            const payload = { meal: $('addFoodMeal').value, grams: grams, log_date: LOG_DATE };
 
-            const existingFood = foodByName[foodSelect.value.trim().toLowerCase()];
-            const payload = {
-                meal: addFoodMealInput.value,
-                grams: grams,
-                log_date: <?php echo json_encode($logDate); ?>,
-            };
-
-            if (existingFood) {
-                payload.food_id = existingFood.id;
-            } else if (customFoodFields.classList.contains('show')) {
-                const name = document.getElementById('customName').value.trim();
-                if (!name) {
-                    showMessage(modalMessage, 'Enter a name for the custom food.', 'error');
-                    return;
-                }
+            if (existing) {
+                payload.food_id = existing.id;
+            } else if ($('customBox').open) {
+                const name = $('customName').value.trim();
+                if (!name) { say(modalMsg, 'Enter a name for the custom food.', 'err'); return; }
                 payload.new_food = {
                     name: name,
-                    calories_per_100g: document.getElementById('customCal').value || 0,
-                    protein_per_100g: document.getElementById('customProtein').value || 0,
-                    carbs_per_100g: document.getElementById('customCarbs').value || 0,
-                    fat_per_100g: document.getElementById('customFat').value || 0,
+                    calories_per_100g: $('customCal').value || 0, protein_per_100g: $('customProtein').value || 0,
+                    carbs_per_100g: $('customCarbs').value || 0, fat_per_100g: $('customFat').value || 0
                 };
             } else {
-                showMessage(modalMessage, "Pick a food from the list, or add it as a custom food below.", 'error');
+                say(modalMsg, 'Pick a food from the list, or add it as a custom food.', 'err');
                 return;
             }
 
+            const btn = $('saveFoodBtn'); btn.disabled = true;
+            post('api/log-food.php', payload).then(d => {
+                if (d.success) location.reload();
+                else { say(modalMsg, d.error || 'Could not log that food.', 'err'); btn.disabled = false; }
+            }).catch(() => { say(modalMsg, NET, 'err'); btn.disabled = false; });
+        });
+
+        // ---------- Remove an entry ----------
+        document.querySelectorAll('.remove-entry').forEach(btn => btn.addEventListener('click', () => {
+            if (!confirm('Remove this food entry?')) return;
             btn.disabled = true;
-            fetch('api/log-food.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    location.reload();
-                } else {
-                    showMessage(modalMessage, data.error || 'Could not log that food.', 'error');
-                    btn.disabled = false;
-                }
-            })
-            .catch(() => { showMessage(modalMessage, 'Could not reach the server.', 'error'); btn.disabled = false; });
-        });
-
-        // ---------- Remove a logged entry ----------
-        document.querySelectorAll('.remove-entry-btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                if (!confirm('Remove this food entry?')) return;
-                btn.disabled = true;
-
-                fetch('api/delete-food-log.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ log_id: btn.dataset.logId })
-                })
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success) {
-                        location.reload();
-                    } else {
-                        showMessage(pageMessage, data.error || 'Could not remove that entry.', 'error');
-                        btn.disabled = false;
-                    }
-                })
-                .catch(() => { showMessage(pageMessage, 'Could not reach the server.', 'error'); btn.disabled = false; });
-            });
-        });
+            post('api/delete-food-log.php', { log_id: btn.dataset.logId }).then(d => {
+                if (d.success) location.reload();
+                else { say($('pageMessage'), d.error || 'Could not remove that entry.', 'err'); btn.disabled = false; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+            }).catch(() => { say($('pageMessage'), NET, 'err'); btn.disabled = false; });
+        }));
     </script>
 </body>
+
 </html>

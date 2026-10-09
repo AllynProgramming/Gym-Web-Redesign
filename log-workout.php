@@ -136,6 +136,7 @@ sort($exerciseSuggestions, SORT_NATURAL | SORT_FLAG_CASE);
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <script src="assets/theme.js"></script>
     <title><?php echo $editWorkoutId ? 'Edit workout' : 'Log workout'; ?> | GymTrack</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -613,16 +614,14 @@ sort($exerciseSuggestions, SORT_NATURAL | SORT_FLAG_CASE);
                                 <optgroup label="Common splits">
                                     <?php foreach ($commonSplits as $split): ?>
                                         <option value="<?php echo htmlspecialchars($split); ?>">
-                                            <?php echo htmlspecialchars($split); ?>
-                                        </option>
+                                            <?php echo htmlspecialchars($split); ?></option>
                                     <?php endforeach; ?>
                                 </optgroup>
                                 <?php if (!empty($customPlanNames)): ?>
                                     <optgroup label="Your plans">
                                         <?php foreach ($customPlanNames as $p): ?>
                                             <option value="<?php echo htmlspecialchars($p['plan_name']); ?>">
-                                                <?php echo htmlspecialchars($p['plan_name']); ?>
-                                            </option>
+                                                <?php echo htmlspecialchars($p['plan_name']); ?></option>
                                         <?php endforeach; ?>
                                     </optgroup>
                                 <?php endif; ?>
