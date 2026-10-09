@@ -3,6 +3,7 @@
 // Add/accept/remove friends, plus a weekly total-weight leaderboard among you and your friends.
 
 require_once __DIR__ . '/api/includes/db.php';
+require_once __DIR__ . '/api/includes/timezone.php';
 require_once __DIR__ . '/api/includes/auth.php';
 
 requireLogin();
@@ -69,7 +70,7 @@ foreach ($friendRows as $row) {
     }
 }
 
-// --- Weekly leaderboard: me + all accepted friends, current Mon–Sun week ---
+// --- Weekly leaderboard: me + all accepted friends, current Mon-Sun week ---
 $leaderboardIds = array_merge([$userId], $friendIds);
 
 $weekStart = new DateTime('now');
@@ -77,672 +78,785 @@ $weekStart->modify('Monday this week');
 $weekEnd = (clone $weekStart)->modify('Sunday this week');
 $weekStartStr = $weekStart->format('Y-m-d');
 $weekEndStr = $weekEnd->format('Y-m-d');
+$weekNextStr = (clone $weekStart)->modify('+7 days')->format('Y-m-d'); // exclusive upper bound
 
 $leaderboard = [];
 if (!empty($leaderboardIds)) {
     $placeholders = implode(',', array_fill(0, count($leaderboardIds), '?'));
 
+    // Warm-up sets are not counted, so the ranking matches the rest of the app.
     $stmt = $conn->prepare("
         SELECT u.id, u.username, u.first_name,
-               COALESCE(SUM(e.weight * e.reps), 0) AS total_weight,
+               COALESCE(SUM(CASE WHEN e.is_warmup = 1 THEN 0
+                                 ELSE e.weight * e.reps * GREATEST(COALESCE(e.sets, 1), 1) END), 0) AS total_weight,
                COUNT(DISTINCT ws.id) AS session_count
         FROM users u
-        LEFT JOIN workout_sessions ws ON ws.user_id = u.id AND ws.session_date BETWEEN ? AND ?
+        LEFT JOIN workout_sessions ws ON ws.user_id = u.id AND ws.session_date >= ? AND ws.session_date < ?
         LEFT JOIN exercises e ON e.session_id = ws.id
         WHERE u.id IN ($placeholders)
         GROUP BY u.id
         ORDER BY total_weight DESC
     ");
     // Bind order must match placeholder order in the query text above:
-    // the two BETWEEN dates first, then the IN(...) id list.
-    $stmt->bind_param('ss' . str_repeat('i', count($leaderboardIds)), $weekStartStr, $weekEndStr, ...$leaderboardIds);
+    // the two date bounds first, then the IN(...) id list.
+    $stmt->bind_param('ss' . str_repeat('i', count($leaderboardIds)), $weekStartStr, $weekNextStr, ...$leaderboardIds);
     $stmt->execute();
     $leaderboard = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
 }
 
-$medals = ['🥇', '🥈', '🥉'];
+// Ranks with ties; people with nothing lifted this week are not ranked
+$ranked = [];
+$position = 0;
+$rank = 0;
+$prevTotal = null;
+foreach ($leaderboard as $row) {
+    $total = (float) $row['total_weight'];
+    if ($total > 0) {
+        $position++;
+        if ($prevTotal === null || $total != $prevTotal) {
+            $rank = $position;
+        }
+        $prevTotal = $total;
+        $row['rank'] = $rank;
+    } else {
+        $row['rank'] = null;
+    }
+    $ranked[] = $row;
+}
+$topTotal = !empty($ranked) ? (float) $ranked[0]['total_weight'] : 0;
+
+function gt_e($s)
+{
+    return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+}
+function gt_name($r)
+{
+    return $r['first_name'] ?: $r['username'];
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Friends - GymTrack</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <script src="assets/theme.js"></script>
+    <title>Friends | GymTrack</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..900&family=Newsreader:opsz,wght@6..72,400..600&display=swap"
+        rel="stylesheet">
     <style>
         :root {
-            color-scheme: dark;
-            --bg-dark: #05030a;
-            --panel: rgba(15, 8, 28, 0.95);
-            --panel-2: rgba(20, 12, 40, 0.98);
-            --text-main: #f6f7ff;
-            --text-muted: #adb2d4;
-            --border: rgba(151, 109, 222, 0.22);
+            --bg: #ECEEEA;
+            --surface: #F7F8F5;
+            --ink: #1D2024;
+            --muted: #5B6168;
+            --rule: #C9CEC9;
+            --accent: #1F4FCC;
+            --on-accent: #fff;
+            --err: #B3261E;
+            --yellow: #EDBE2B;
+            --head: "Archivo", Arial, sans-serif;
+            --body: "Newsreader", Georgia, serif;
+            box-sizing: border-box
         }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @media (prefers-color-scheme:dark) {
+            :root {
+                --bg: #16181B;
+                --surface: #1E2125;
+                --ink: #E8EAE6;
+                --muted: #9AA0A6;
+                --rule: #34383D;
+                --accent: #6C93FF;
+                --on-accent: #0F1216;
+                --err: #FF8A80
+            }
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: inherit
+        }
 
         body {
-            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            min-height: 100vh;
-            background:
-                radial-gradient(circle at top left, rgba(120, 81, 169, 0.18), transparent 20%),
-                radial-gradient(circle at bottom right, rgba(120, 81, 169, 0.12), transparent 18%),
-                var(--bg-dark);
-            color: var(--text-main);
-        }
-
-        /* ---------- Navbar (same pattern site-wide) ---------- */
-        .navbar {
-            background: rgba(5, 5, 15, 0.96);
-            border-bottom: 1px solid rgba(151, 109, 222, 0.2);
-            padding: 22px 32px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 16px;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            backdrop-filter: blur(16px);
-        }
-
-        .navbar h1 { font-size: 1.9rem; letter-spacing: 0.03em; }
-
-        .nav-toggle {
-            display: none;
-            align-items: center;
-            justify-content: center;
-            width: 46px;
-            height: 46px;
-            border: 1px solid rgba(151, 109, 222, 0.3);
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.06);
-            color: #fff;
-            cursor: pointer;
-        }
-
-        .barbell-icon { display: inline-flex; align-items: center; gap: 4px; }
-        .barbell-icon .bar { width: 18px; height: 4px; border-radius: 999px; background: linear-gradient(90deg, #fff, #c284ff); box-shadow: 0 0 12px rgba(194, 132, 255, 0.3); }
-        .barbell-icon .plate { width: 8px; height: 12px; border-radius: 999px; background: linear-gradient(135deg, #a755ff, #7a3ecf); border: 1px solid rgba(255, 255, 255, 0.28); box-shadow: inset 0 0 4px rgba(255, 255, 255, 0.2); }
-
-        .navbar-right { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-
-        .navbar-right a {
-            color: var(--text-main);
-            text-decoration: none;
-            padding: 10px 16px;
-            border-radius: 999px;
-            transition: background 0.3s ease;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            font-weight: 600;
-            font-size: 0.92rem;
-        }
-
-        .navbar-right a:hover { background: rgba(120, 81, 169, 0.18); }
-
-        /* ---------- Layout ---------- */
-        .container { max-width: 820px; margin: 0 auto; padding: 32px 24px 60px; }
-
-        .page-head { margin-bottom: 22px; }
-        .page-head h2 { font-size: clamp(1.8rem, 2.5vw, 2.2rem); margin-bottom: 6px; }
-        .page-head p { color: var(--text-muted); font-size: 1rem; }
-
-        .panel {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 22px;
-            padding: 24px;
-            margin-bottom: 20px;
-            box-shadow: 0 16px 34px rgba(0, 0, 0, 0.2);
-        }
-
-        .panel-title { font-size: 1.05rem; font-weight: 700; margin-bottom: 16px; color: #fff; }
-        .panel-subtitle { font-size: 0.85rem; color: var(--text-muted); margin: -10px 0 16px; }
-
-        .message {
-            padding: 11px 14px;
-            border-radius: 12px;
-            font-weight: 600;
-            font-size: 0.88rem;
-            margin-bottom: 16px;
-            display: none;
-        }
-        .message.show { display: block; }
-        .message.success { background: rgba(151, 109, 222, 0.14); border: 1px solid rgba(151, 109, 222, 0.3); color: #e7d6ff; }
-        .message.error { background: rgba(255, 94, 94, 0.16); border: 1px solid rgba(255, 94, 94, 0.24); color: #ffd7d7; }
-
-        /* ---------- Add friend form ---------- */
-        .add-friend-form { display: flex; gap: 10px; }
-
-        .add-friend-form input {
-            flex: 1;
-            padding: 12px 14px;
-            min-height: 46px;
-            border-radius: 12px;
-            border: 1px solid rgba(151, 109, 222, 0.22);
-            background: rgba(255, 255, 255, 0.05);
-            color: var(--text-main);
-            font-size: 0.95rem;
-            font-family: inherit;
-        }
-
-        .add-friend-form input:focus { outline: none; border-color: rgba(155, 106, 240, 0.8); box-shadow: 0 0 0 3px rgba(155, 106, 240, 0.16); }
-        .add-friend-form input::placeholder { color: #7e89ab; }
-
-        .add-friend-form button {
-            padding: 12px 22px;
-            min-height: 46px;
-            border: none;
-            border-radius: 12px;
-            background: linear-gradient(135deg, #a755ff 0%, #7d3fd0 55%, #632a9f 100%);
-            color: #fff;
-            font-weight: 700;
-            cursor: pointer;
-            white-space: nowrap;
-        }
-
-        .add-friend-form button:disabled { opacity: 0.6; cursor: not-allowed; }
-
-        /* ---------- Person rows ---------- */
-        .person-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            padding: 12px 14px;
-            background: var(--panel-2);
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            margin-bottom: 10px;
-        }
-
-        .person-row:last-child { margin-bottom: 0; }
-        .person-info strong { display: block; font-size: 0.95rem; }
-        .person-info span { color: var(--text-muted); font-size: 0.82rem; }
-
-        .person-info-btn {
-            background: none;
-            border: none;
-            padding: 0;
             margin: 0;
-            text-align: left;
+            background: var(--bg);
+            color: var(--ink);
+            font: 400 1.125rem/1.55 var(--body);
+            padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px)
+        }
+
+        :focus-visible {
+            outline: 3px solid var(--accent);
+            outline-offset: 3px
+        }
+
+        a {
+            color: inherit
+        }
+
+        .wrap {
+            max-width: 760px;
+            margin: 0 auto;
+            padding: 0 clamp(1.1rem, 4vw, 2rem)
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 1rem 2rem;
+            flex-wrap: wrap;
+            padding: 1.2rem 0;
+            border-bottom: 1px solid var(--rule)
+        }
+
+        .logo {
+            font: 800 1.25rem var(--head);
+            font-stretch: 112%;
+            text-decoration: none
+        }
+
+        nav {
+            display: flex;
+            gap: .3rem 1.4rem;
+            flex-wrap: wrap;
+            align-items: center;
+            font: 600 .95rem var(--head)
+        }
+
+        nav a {
+            text-decoration: none;
+            padding: .3rem 0
+        }
+
+        nav a:hover {
+            text-decoration: underline;
+            text-underline-offset: 4px
+        }
+
+        .top {
+            padding: 2.2rem 0 .6rem
+        }
+
+        h1 {
+            font: 850 clamp(2.1rem, 6vw, 3.6rem)/1 var(--head);
+            font-stretch: 118%;
+            letter-spacing: -.025em;
+            margin: 0 0 .5rem
+        }
+
+        .lede {
+            color: var(--muted);
+            margin: 0;
+            max-width: 32rem
+        }
+
+        .sec {
+            padding: 1.8rem 0;
+            border-top: 1px solid var(--rule);
+            margin-top: 1.4rem
+        }
+
+        .sec>h2 {
+            font: 750 1.2rem var(--head);
+            margin: 0 0 .3rem
+        }
+
+        .sub {
+            color: var(--muted);
+            margin: 0 0 1rem;
+            font-size: 1rem
+        }
+
+        .btn {
+            display: inline-block;
+            background: var(--accent);
+            color: var(--on-accent);
+            font: 700 1rem var(--head);
+            padding: .75rem 1.3rem;
+            border: 0;
+            border-radius: 6px;
             cursor: pointer;
+            min-height: 2.8rem;
+            white-space: nowrap
+        }
+
+        .btn.alt {
+            background: transparent;
+            color: var(--ink);
+            box-shadow: inset 0 0 0 2px var(--ink)
+        }
+
+        .btn[disabled] {
+            opacity: .6;
+            cursor: wait
+        }
+
+        .msg {
+            margin: 1rem 0 0;
+            padding: .75rem 1rem;
+            border-radius: 6px;
+            font: 600 1rem var(--head);
+            background: var(--surface);
+            box-shadow: inset 0 0 0 1px var(--rule)
+        }
+
+        .msg.err {
+            color: var(--err);
+            box-shadow: inset 0 0 0 2px var(--err)
+        }
+
+        .msg[hidden] {
+            display: none
+        }
+
+        .add {
+            display: flex;
+            gap: .6rem;
+            align-items: end;
+            flex-wrap: wrap
+        }
+
+        .add .field {
             flex: 1;
-            min-width: 0;
-            border-radius: 8px;
+            min-width: 12rem
         }
 
-        .person-info-btn:hover strong { color: #d8b8ff; }
-        .person-info-btn:hover span { color: #c9a8f5; }
-        .person-info-btn:focus-visible { outline: 2px solid rgba(155, 106, 240, 0.8); outline-offset: 3px; }
-
-        .person-actions { display: flex; gap: 8px; flex-shrink: 0; }
-
-        .btn-pill {
-            padding: 8px 14px;
-            border-radius: 999px;
-            font-size: 0.82rem;
-            font-weight: 700;
-            cursor: pointer;
-            border: 1px solid transparent;
-            white-space: nowrap;
+        .field {
+            display: grid;
+            gap: .3rem
         }
 
-        .btn-accept { background: rgba(55, 184, 147, 0.14); border-color: rgba(55, 184, 147, 0.35); color: #4fd6ac; }
-        .btn-accept:hover { background: rgba(55, 184, 147, 0.24); }
-
-        .btn-decline, .btn-remove { background: rgba(255, 94, 94, 0.1); border-color: rgba(255, 94, 94, 0.3); color: #ffb3b3; }
-        .btn-decline:hover, .btn-remove:hover { background: rgba(255, 94, 94, 0.18); }
-
-        .pending-tag {
-            font-size: 0.78rem;
-            color: var(--text-muted);
-            font-style: italic;
+        label {
+            font: 700 .85rem var(--head)
         }
 
-        .empty-note { color: var(--text-muted); font-size: 0.88rem; text-align: center; padding: 10px 0; }
-
-        /* ---------- Friend's week modal ---------- */
-        .modal-backdrop {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(5, 3, 10, 0.72);
-            backdrop-filter: blur(6px);
-            z-index: 50;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-
-        .modal-backdrop.is-open { display: flex; }
-
-        .modal-panel {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 24px;
-            max-width: 480px;
+        input[type=text] {
+            font: 400 1.1rem var(--body);
+            color: var(--ink);
+            background: var(--surface);
+            border: 2px solid var(--rule);
+            border-radius: 4px;
+            padding: .65rem .75rem;
             width: 100%;
-            max-height: 85vh;
-            overflow-y: auto;
-            padding: 26px;
-            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
+            min-width: 0;
+            min-height: 2.8rem
         }
 
-        .modal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 18px; }
-        .modal-head h3 { font-size: 1.2rem; color: #fff; margin-bottom: 2px; }
+        input[type=text]:focus {
+            outline: none;
+            border-color: var(--accent)
+        }
 
-        .modal-close {
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: var(--text-main);
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            font-size: 1rem;
+        input[type=text]:focus-visible {
+            outline: 3px solid var(--accent);
+            outline-offset: 1px
+        }
+
+        .lb {
+            list-style: none;
+            margin: 0;
+            padding: 0
+        }
+
+        .lb li {
+            display: grid;
+            grid-template-columns: 2.6rem 1fr auto;
+            gap: .2rem .8rem;
+            align-items: center;
+            padding: .8rem 0;
+            border-bottom: 1px solid var(--rule)
+        }
+
+        .lb .rk {
+            font: 850 1.5rem var(--head);
+            font-stretch: 112%;
+            font-variant-numeric: tabular-nums;
+            color: var(--muted);
+            text-align: center
+        }
+
+        .lb li.top1 .rk {
+            color: var(--ink)
+        }
+
+        .lb .nm {
+            font: 700 1.05rem var(--head);
+            overflow-wrap: anywhere
+        }
+
+        .lb .nm small {
+            display: block;
+            font: 400 .95rem var(--body);
+            color: var(--muted)
+        }
+
+        .lb .kg {
+            font: 800 1.2rem var(--head);
+            font-variant-numeric: tabular-nums;
+            text-align: right
+        }
+
+        .lb .kg small {
+            font: 600 .85rem var(--head);
+            color: var(--muted)
+        }
+
+        .lb .bar {
+            grid-column: 2/-1;
+            height: 8px;
+            border-radius: 4px;
+            background: var(--surface);
+            box-shadow: inset 0 0 0 1px var(--rule);
+            overflow: hidden
+        }
+
+        .lb .bar i {
+            display: block;
+            height: 100%;
+            border-radius: 4px;
+            background: var(--muted)
+        }
+
+        .lb li.me .bar i {
+            background: var(--accent)
+        }
+
+        .lb li.me .nm {
+            color: var(--accent)
+        }
+
+        .people {
+            list-style: none;
+            margin: 0;
+            padding: 0
+        }
+
+        .people li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: .8rem;
+            padding: .75rem 0;
+            border-bottom: 1px solid var(--rule);
+            flex-wrap: wrap
+        }
+
+        .who {
+            font: 700 1.05rem var(--head);
+            overflow-wrap: anywhere
+        }
+
+        .who small {
+            display: block;
+            font: 400 .95rem var(--body);
+            color: var(--muted)
+        }
+
+        .acts {
+            display: flex;
+            gap: .4rem;
+            flex-wrap: wrap
+        }
+
+        .acts button {
+            font: 700 .9rem var(--head);
+            min-height: 2.4rem;
+            padding: .3rem .9rem;
+            border-radius: 6px;
             cursor: pointer;
-            flex-shrink: 0;
+            background: transparent;
+            color: var(--ink);
+            border: 2px solid var(--rule)
         }
-        .modal-close:hover { background: rgba(255, 255, 255, 0.12); }
 
-        .modal-total {
-            background: rgba(151, 109, 222, 0.12);
-            border: 1px solid rgba(151, 109, 222, 0.3);
-            border-radius: 14px;
-            padding: 12px 16px;
-            margin-bottom: 16px;
+        .acts button:hover {
+            border-color: var(--ink)
+        }
+
+        .acts button.go {
+            background: var(--accent);
+            color: var(--on-accent);
+            border-color: var(--accent)
+        }
+
+        .acts button.no {
+            color: var(--err)
+        }
+
+        .acts button.no:hover {
+            border-color: var(--err)
+        }
+
+        .acts button[disabled] {
+            opacity: .6;
+            cursor: wait
+        }
+
+        .pend {
+            font: 600 .9rem var(--head);
+            color: var(--muted)
+        }
+
+        .empty {
+            color: var(--muted);
+            margin: 0
+        }
+
+        dialog {
+            border: 0;
+            border-radius: 10px;
+            padding: 1.5rem;
+            max-width: 30rem;
+            width: calc(100% - 2rem);
+            max-height: 90vh;
+            background: var(--surface);
+            color: var(--ink);
+            box-shadow: 0 0 0 1px var(--rule), 0 20px 50px rgba(0, 0, 0, .3)
+        }
+
+        dialog::backdrop {
+            background: rgba(0, 0, 0, .5)
+        }
+
+        .dh {
             display: flex;
             justify-content: space-between;
-            align-items: center;
+            align-items: start;
+            gap: 1rem;
+            margin-bottom: .6rem
         }
-        .modal-total strong { font-size: 1.2rem; color: #d8b8ff; }
-        .modal-total span { color: var(--text-muted); font-size: 0.85rem; }
 
-        .modal-session {
-            background: var(--panel-2);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 16px;
-            margin-bottom: 12px;
+        .dh h2 {
+            font: 800 1.4rem/1.2 var(--head);
+            margin: 0
         }
-        .modal-session:last-child { margin-bottom: 0; }
 
-        .modal-session-head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-        .modal-session-head strong { font-size: 0.95rem; }
-        .modal-session-head span { color: var(--text-muted); font-size: 0.82rem; }
+        .dh p {
+            margin: .1rem 0 0;
+            color: var(--muted);
+            font-size: 1rem
+        }
 
-        .modal-exercise { margin-bottom: 10px; }
-        .modal-exercise:last-child { margin-bottom: 0; }
-        .modal-exercise-name { font-size: 0.9rem; font-weight: 700; margin-bottom: 4px; }
+        .x {
+            border: 0;
+            background: transparent;
+            color: var(--muted);
+            font: 700 1.4rem/1 var(--head);
+            width: 2.4rem;
+            height: 2.4rem;
+            border-radius: 6px;
+            cursor: pointer;
+            flex: none
+        }
 
-        .modal-set-line {
+        .x:hover {
+            color: var(--ink);
+            box-shadow: inset 0 0 0 1.5px var(--ink)
+        }
+
+        .tot {
             display: flex;
             justify-content: space-between;
-            padding: 3px 0;
-            font-size: 0.85rem;
-            color: var(--text-muted);
+            align-items: baseline;
+            border-top: 2px solid var(--ink);
+            padding: .5rem 0 .8rem
         }
-        .modal-set-line span:last-child { font-weight: 700; color: #d8b8ff; }
-        .modal-set-line.is-warmup span:first-child,
-        .modal-set-line.is-warmup span:last-child { color: #ffb454; }
 
-        /* ---------- Leaderboard ---------- */
-        .leaderboard-row {
+        .tot span {
+            font: 600 .95rem var(--head);
+            color: var(--muted)
+        }
+
+        .tot b {
+            font: 800 1.5rem var(--head);
+            font-variant-numeric: tabular-nums
+        }
+
+        .ses {
+            border-top: 1px solid var(--rule);
+            padding: .8rem 0
+        }
+
+        .ses h3 {
+            font: 750 1.05rem var(--head);
+            margin: 0
+        }
+
+        .ses .fa {
+            color: var(--muted);
+            font-size: .95rem;
+            margin: 0 0 .5rem
+        }
+
+        .ses h4 {
+            font: 700 .95rem var(--head);
+            margin: .6rem 0 .2rem;
+            overflow-wrap: anywhere
+        }
+
+        .sl {
             display: flex;
-            align-items: center;
-            gap: 14px;
-            padding: 14px 16px;
-            background: var(--panel-2);
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            margin-bottom: 10px;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: .3rem 0;
+            border-bottom: 1px solid var(--rule);
+            font-variant-numeric: tabular-nums
         }
 
-        .leaderboard-row.is-me { border-color: rgba(155, 106, 240, 0.55); background: rgba(151, 109, 222, 0.12); }
-        .leaderboard-row:last-child { margin-bottom: 0; }
+        .sl span:first-child {
+            font: 600 .9rem var(--head);
+            color: var(--muted)
+        }
 
-        .rank { font-size: 1.2rem; font-weight: 800; width: 32px; text-align: center; color: var(--text-muted); flex-shrink: 0; }
-        .rank.medal { font-size: 1.5rem; }
+        .sl.wu span:first-child {
+            background: var(--yellow);
+            color: #1D2024;
+            border-radius: 20px;
+            padding: 0 .5rem;
+            font-size: .8rem;
+            align-self: center
+        }
 
-        .lb-info { flex: 1; min-width: 0; }
-        .lb-info strong { display: block; font-size: 0.98rem; }
-        .lb-info span { color: var(--text-muted); font-size: 0.82rem; }
+        .sl span:last-child {
+            font: 700 1rem var(--head)
+        }
 
-        .lb-weight { text-align: right; flex-shrink: 0; }
-        .lb-weight strong { display: block; font-size: 1.15rem; color: #d8b8ff; }
-        .lb-weight span { color: var(--text-muted); font-size: 0.78rem; }
+        footer {
+            padding: 1rem 0 3rem
+        }
 
-        @media (max-width: 640px) {
-            .container { padding: 20px 16px 40px; }
-            .navbar { padding: 16px 20px; }
-            .nav-toggle { display: inline-flex; }
-
-            .navbar-right {
-                display: none;
-                position: absolute;
-                top: calc(100% + 10px);
-                right: 20px;
-                left: 20px;
-                flex-direction: column;
-                align-items: stretch;
-                padding: 14px;
-                background: rgba(5, 5, 15, 0.98);
-                border: 1px solid rgba(151, 109, 222, 0.24);
-                border-radius: 18px;
-                box-shadow: 0 16px 32px rgba(0, 0, 0, 0.24);
+        @media (max-width:560px) {
+            .add .btn {
+                width: 100%
             }
 
-            .navbar-right.is-open { display: flex; }
-            .navbar-right a { width: 100%; text-align: center; justify-content: center; }
+            .people li .acts {
+                width: 100%
+            }
 
-            .add-friend-form { flex-direction: column; }
-            .person-row { flex-direction: column; align-items: flex-start; }
-            .person-actions { width: 100%; }
-            .person-actions .btn-pill { flex: 1; text-align: center; }
+            .people li .acts button {
+                flex: 1
+            }
         }
     </style>
 </head>
+
 <body>
-    <nav class="navbar">
-        <h1>Personal GymTracker </h1>
-        <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation" type="button">
-            <span class="barbell-icon" aria-hidden="true">
-                <span class="plate"></span>
-                <span class="bar"></span>
-                <span class="plate"></span>
-            </span>
-        </button>
-        <div class="navbar-right" id="navMenu">
-            <a href="dashboard.php">Dashboard</a>
-            <a href="nutrition.php">Nutrition</a>
-            <a href="profile.php">Profile</a>
-            <a href="api/logout.php">Logout</a>
-        </div>
-    </nav>
+    <div class="wrap">
+        <header>
+            <a class="logo" href="dashboard.php">GymTrack</a>
+            <nav aria-label="Main">
+                <a href="dashboard.php">Dashboard</a>
+                <a href="log-workout.php">Log workout</a>
+                <a href="nutrition.php">Nutrition</a>
+                <a href="profile.php">Profile</a>
+                <a href="api/logout.php">Log out</a>
+            </nav>
+        </header>
 
-    <div class="container">
-        <div class="page-head">
-            <h2>Friends</h2>
-            <p>Add friends and see who's moved the most weight this week.</p>
-        </div>
-
-        <div class="message" id="formMessage"></div>
-
-        <!-- Add a friend -->
-        <div class="panel">
-            <p class="panel-title">Add a friend</p>
-            <form class="add-friend-form" id="addFriendForm">
-                <input type="text" id="friendUsername" placeholder="Their username" required>
-                <button type="submit" id="addFriendBtn">Send request</button>
-            </form>
-        </div>
-
-        <!-- Incoming requests -->
-        <?php if (!empty($incomingRequests)): ?>
-        <div class="panel">
-            <p class="panel-title">Friend requests</p>
-            <div id="incomingList">
-                <?php foreach ($incomingRequests as $r): ?>
-                    <div class="person-row" data-friendship-id="<?php echo $r['friendship_id']; ?>">
-                        <div class="person-info">
-                            <strong><?php echo htmlspecialchars($r['first_name'] ?: $r['username']); ?></strong>
-                            <span>@<?php echo htmlspecialchars($r['username']); ?></span>
-                        </div>
-                        <div class="person-actions">
-                            <button class="btn-pill btn-accept" data-action="accept" data-id="<?php echo $r['friendship_id']; ?>">Accept</button>
-                            <button class="btn-pill btn-decline" data-action="decline" data-id="<?php echo $r['friendship_id']; ?>">Decline</button>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
+        <main>
+            <div class="top">
+                <h1>Friends</h1>
+                <p class="lede">Add friends and see who has moved the most weight this week.</p>
             </div>
-        </div>
-        <?php endif; ?>
 
-        <!-- Your friends -->
-        <div class="panel">
-            <p class="panel-title">Your friends</p>
-            <div id="friendsList">
-                <?php if (empty($friends)): ?>
-                    <p class="empty-note">No friends yet — add someone above.</p>
-                <?php else: ?>
-                    <?php foreach ($friends as $f): ?>
-                        <div class="person-row" data-friendship-id="<?php echo $f['friendship_id']; ?>">
-                            <button type="button" class="person-info person-info-btn" data-friend-id="<?php echo $f['id']; ?>">
-                                <strong><?php echo htmlspecialchars($f['first_name'] ?: $f['username']); ?></strong>
-                                <span>@<?php echo htmlspecialchars($f['username']); ?> · tap to view this week</span>
-                            </button>
-                            <div class="person-actions">
-                                <button class="btn-pill btn-remove" data-action="remove" data-id="<?php echo $f['friendship_id']; ?>">Remove</button>
-                            </div>
-                        </div>
-                    <?php endforeach; ?>
-                <?php endif; ?>
-
-                <?php foreach ($outgoingRequests as $r): ?>
-                    <div class="person-row">
-                        <div class="person-info">
-                            <strong><?php echo htmlspecialchars($r['first_name'] ?: $r['username']); ?></strong>
-                            <span>@<?php echo htmlspecialchars($r['username']); ?></span>
-                        </div>
-                        <span class="pending-tag">Request sent</span>
+            <section class="sec" style="margin-top:.6rem">
+                <h2>Add a friend</h2>
+                <form class="add" id="addFriendForm">
+                    <div class="field"><label for="friendUsername">Their username</label><input type="text"
+                            id="friendUsername" required autocomplete="off" autocapitalize="none" spellcheck="false">
                     </div>
-                <?php endforeach; ?>
-            </div>
-        </div>
+                    <button type="submit" class="btn" id="addFriendBtn">Send request</button>
+                </form>
+                <div class="msg" id="formMessage" role="status" aria-live="polite" hidden></div>
+            </section>
 
-        <!-- Weekly leaderboard -->
-        <div class="panel">
-            <p class="panel-title">Weekly leaderboard</p>
-            <p class="panel-subtitle"><?php echo $weekStart->format('M j'); ?> – <?php echo $weekEnd->format('M j, Y'); ?> · total weight moved (kg)</p>
-
-            <?php if (empty($leaderboard)): ?>
-                <p class="empty-note">Add friends to see a leaderboard.</p>
-            <?php else: ?>
-                <?php foreach ($leaderboard as $i => $row): ?>
-                    <div class="leaderboard-row<?php echo $row['id'] == $userId ? ' is-me' : ''; ?>">
-                        <span class="rank<?php echo $i < 3 ? ' medal' : ''; ?>"><?php echo $i < 3 ? $medals[$i] : ($i + 1); ?></span>
-                        <div class="lb-info">
-                            <strong><?php echo htmlspecialchars($row['first_name'] ?: $row['username']); ?><?php echo $row['id'] == $userId ? ' (you)' : ''; ?></strong>
-                            <span><?php echo $row['session_count']; ?> session<?php echo $row['session_count'] == 1 ? '' : 's'; ?> this week</span>
-                        </div>
-                        <div class="lb-weight">
-                            <strong><?php echo number_format($row['total_weight']); ?> kg</strong>
-                            <span>total weight</span>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
+            <?php if (!empty($incomingRequests)): ?>
+                <section class="sec">
+                    <h2>Friend requests</h2>
+                    <ul class="people">
+                        <?php foreach ($incomingRequests as $r): ?>
+                            <li>
+                                <div class="who">
+                                    <?php echo gt_e(gt_name($r)); ?><small>@<?php echo gt_e($r['username']); ?></small></div>
+                                <div class="acts">
+                                    <button type="button" class="go" data-action="accept"
+                                        data-id="<?php echo (int) $r['friendship_id']; ?>">Accept</button>
+                                    <button type="button" class="no" data-action="decline"
+                                        data-id="<?php echo (int) $r['friendship_id']; ?>">Decline</button>
+                                </div>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                </section>
             <?php endif; ?>
-        </div>
+
+            <section class="sec">
+                <h2>Weekly leaderboard</h2>
+                <p class="sub"><?php echo gt_e($weekStart->format('M j')); ?> to
+                    <?php echo gt_e($weekEnd->format('M j, Y')); ?>. Total weight moved in kg, working sets only.</p>
+                <ol class="lb">
+                    <?php foreach ($ranked as $row):
+                        $isMe = ((int) $row['id'] === (int) $userId);
+                        $t = (float) $row['total_weight'];
+                        $w = $topTotal > 0 ? max(2, round($t / $topTotal * 100)) : 0; ?>
+                        <li class="<?php echo $isMe ? 'me' : ''; ?><?php echo $row['rank'] === 1 ? ' top1' : ''; ?>">
+                            <span class="rk"
+                                aria-label="<?php echo $row['rank'] ? 'Rank ' . (int) $row['rank'] : 'Not ranked'; ?>"><?php echo $row['rank'] ? (int) $row['rank'] : '-'; ?></span>
+                            <div class="nm"><?php echo gt_e(gt_name($row)); ?><?php echo $isMe ? ' (you)' : ''; ?>
+                                <small><?php echo (int) $row['session_count']; ?>
+                                    session<?php echo (int) $row['session_count'] === 1 ? '' : 's'; ?> this week</small>
+                            </div>
+                            <div class="kg"><?php echo number_format($t); ?> <small>kg</small></div>
+                            <?php if ($t > 0): ?>
+                                <div class="bar" role="img"
+                                    aria-label="<?php echo $topTotal > 0 ? round($t / $topTotal * 100) : 0; ?> percent of the top total">
+                                    <i style="width:<?php echo $w; ?>%"></i></div><?php endif; ?>
+                        </li>
+                    <?php endforeach; ?>
+                </ol>
+                <?php if (empty($friends)): ?>
+                    <p class="sub" style="margin:.8rem 0 0">Add a friend to compete with them here.</p><?php endif; ?>
+            </section>
+
+            <section class="sec">
+                <h2>Your friends</h2>
+                <?php if (empty($friends) && empty($outgoingRequests)): ?>
+                    <p class="empty">No friends yet. Send a request above.</p>
+                <?php else: ?>
+                    <ul class="people">
+                        <?php foreach ($friends as $f): ?>
+                            <li>
+                                <div class="who">
+                                    <?php echo gt_e(gt_name($f)); ?><small>@<?php echo gt_e($f['username']); ?></small></div>
+                                <div class="acts">
+                                    <button type="button" class="view" data-friend-id="<?php echo (int) $f['id']; ?>">View this
+                                        week</button>
+                                    <button type="button" class="no" data-action="remove"
+                                        data-id="<?php echo (int) $f['friendship_id']; ?>"
+                                        aria-label="Remove <?php echo gt_e(gt_name($f)); ?>">Remove</button>
+                                </div>
+                            </li>
+                        <?php endforeach; ?>
+                        <?php foreach ($outgoingRequests as $r): ?>
+                            <li>
+                                <div class="who">
+                                    <?php echo gt_e(gt_name($r)); ?><small>@<?php echo gt_e($r['username']); ?></small></div>
+                                <span class="pend">Request sent</span>
+                            </li>
+                        <?php endforeach; ?>
+                    </ul>
+                <?php endif; ?>
+            </section>
+        </main>
+        <footer></footer>
     </div>
 
-    <!-- Friend's weekly workouts modal -->
-    <div class="modal-backdrop" id="modalBackdrop">
-        <div class="modal-panel" id="modalPanel">
-            <div class="modal-head">
-                <div>
-                    <h3 id="modalFriendName"></h3>
-                    <p id="modalWeekRange" class="panel-subtitle" style="margin:0;"></p>
-                </div>
-                <button type="button" class="modal-close" id="modalClose" aria-label="Close">×</button>
+    <dialog id="weekDialog" aria-labelledby="dlgName">
+        <div class="dh">
+            <div>
+                <h2 id="dlgName"></h2>
+                <p id="dlgRange"></p>
             </div>
-            <div id="modalBody"></div>
+            <button type="button" class="x" id="dlgClose" aria-label="Close">&times;</button>
         </div>
-    </div>
+        <div id="dlgBody" aria-live="polite"></div>
+    </dialog>
 
     <script>
-        const navToggle = document.getElementById('navToggle');
-        const navMenu = document.getElementById('navMenu');
-
-        if (navToggle && navMenu) {
-            navToggle.addEventListener('click', () => navMenu.classList.toggle('is-open'));
-            document.addEventListener('click', (e) => {
-                if (!navToggle.contains(e.target) && !navMenu.contains(e.target)) {
-                    navMenu.classList.remove('is-open');
-                }
-            });
+        const $ = id => document.getElementById(id);
+        function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+        function say(text, kind) { const m = $('formMessage'); m.textContent = text; m.className = 'msg' + (kind === 'err' ? ' err' : ''); m.hidden = false; }
+        function post(url, body) {
+            return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+                .then(r => r.text())
+                .then(t => { try { return JSON.parse(t); } catch (e) { throw new Error('bad response'); } });
         }
+        const NET = 'Could not reach the server, or it sent back something unexpected. Nothing was changed.';
 
-        const messageEl = document.getElementById('formMessage');
-        function showMessage(text, type) {
-            messageEl.textContent = text;
-            messageEl.className = 'message show ' + type;
-        }
-
-        // ---------- Friend's weekly workouts modal ----------
-        const modalBackdrop = document.getElementById('modalBackdrop');
-
-        function escapeHtml(str) {
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
-        }
-
+        // ---------- Friend's week dialog ----------
+        const dlg = $('weekDialog');
         function openFriendWeek(friendId) {
-            document.getElementById('modalFriendName').textContent = 'Loading…';
-            document.getElementById('modalWeekRange').textContent = '';
-            document.getElementById('modalBody').innerHTML = '';
-            modalBackdrop.classList.add('is-open');
+            $('dlgName').textContent = 'Loading';
+            $('dlgRange').textContent = '';
+            $('dlgBody').innerHTML = '';
+            dlg.showModal();
 
             fetch('api/get-friend-week.php?friend_id=' + encodeURIComponent(friendId))
-                .then(res => res.json())
+                .then(r => r.text())
+                .then(t => { try { return JSON.parse(t); } catch (e) { throw new Error('bad response'); } })
                 .then(data => {
-                    if (!data.success) {
-                        document.getElementById('modalFriendName').textContent = 'Could not load';
-                        document.getElementById('modalBody').innerHTML =
-                            `<p class="empty-note">${escapeHtml(data.error || 'Something went wrong.')}</p>`;
-                        return;
-                    }
+                    if (!data.success) { $('dlgName').textContent = 'Could not load'; $('dlgBody').innerHTML = '<p class="empty">' + esc(data.error || 'Something went wrong.') + '</p>'; return; }
+                    $('dlgName').textContent = data.friend.name + '\u2019s week';
+                    $('dlgRange').textContent = data.week.start + ' to ' + data.week.end;
+                    if (!data.sessions.length) { $('dlgBody').innerHTML = '<p class="empty">No workouts logged this week yet.</p>'; return; }
 
-                    document.getElementById('modalFriendName').textContent = data.friend.name + "'s week";
-                    document.getElementById('modalWeekRange').textContent = data.week.start + ' – ' + data.week.end;
+                    // Working sets only, the same rule the leaderboard uses
+                    let total = 0;
+                    data.sessions.forEach(s => s.exercises.forEach(ex => ex.sets.forEach(st => { if (!st.is_warmup) total += (parseFloat(st.weight) || 0) * (parseInt(st.reps, 10) || 0); })));
 
-                    if (data.sessions.length === 0) {
-                        document.getElementById('modalBody').innerHTML =
-                            '<p class="empty-note">No workouts logged this week yet.</p>';
-                        return;
-                    }
-
-                    let html = `
-                        <div class="modal-total">
-                            <span>Total weight this week</span>
-                            <strong>${data.total_volume.toLocaleString()} kg</strong>
-                        </div>
-                    `;
-
-                    html += data.sessions.map(session => {
+                    let html = '<div class="tot"><span>Total weight this week</span><b>' + Math.round(total).toLocaleString() + ' kg</b></div>';
+                    html += data.sessions.map(s => {
                         const facts = [];
-                        if (session.duration) facts.push(session.duration + ' min');
-                        if (session.mood) facts.push('Felt ' + session.mood);
-
-                        const exercisesHtml = session.exercises.map(ex => {
-                            let workingCount = 0;
-                            const setsHtml = ex.sets.map(set => {
-                                const label = set.is_warmup ? 'Warmup' : ('Set ' + (++workingCount));
-                                return `<div class="modal-set-line${set.is_warmup ? ' is-warmup' : ''}">
-                                            <span>${label}</span>
-                                            <span>${set.weight}kg × ${set.reps}</span>
-                                        </div>`;
-                            }).join('');
-                            return `<div class="modal-exercise">
-                                        <div class="modal-exercise-name">${escapeHtml(ex.name)}</div>
-                                        ${setsHtml}
-                                    </div>`;
-                        }).join('') || '<p class="empty-note" style="padding:0;">No exercises recorded.</p>';
-
-                        return `
-                            <div class="modal-session">
-                                <div class="modal-session-head">
-                                    <strong>${session.plan ? escapeHtml(session.plan) + ' — ' : ''}${session.date}</strong>
-                                    <span>${facts.join(' · ')}</span>
-                                </div>
-                                ${exercisesHtml}
-                            </div>
-                        `;
+                        if (s.duration) facts.push(s.duration + ' min');
+                        if (s.mood) facts.push('Felt ' + s.mood);
+                        const ex = s.exercises.map(e => {
+                            let n = 0;
+                            const sets = e.sets.map(st => '<div class="sl' + (st.is_warmup ? ' wu' : '') + '"><span>' + (st.is_warmup ? 'Warm-up' : 'Set ' + (++n)) + '</span><span>' + esc(st.weight) + ' kg x ' + esc(st.reps) + '</span></div>').join('');
+                            return '<h4>' + esc(e.name) + '</h4>' + sets;
+                        }).join('') || '<p class="empty">No exercises recorded.</p>';
+                        return '<div class="ses"><h3>' + esc((s.plan ? s.plan + ', ' : '') + s.date) + '</h3>' + (facts.length ? '<p class="fa">' + esc(facts.join(', ')) + '</p>' : '') + ex + '</div>';
                     }).join('');
-
-                    document.getElementById('modalBody').innerHTML = html;
+                    $('dlgBody').innerHTML = html;
                 })
-                .catch(() => {
-                    document.getElementById('modalFriendName').textContent = 'Could not load';
-                    document.getElementById('modalBody').innerHTML =
-                        '<p class="empty-note">Could not reach the server.</p>';
-                });
+                .catch(() => { $('dlgName').textContent = 'Could not load'; $('dlgBody').innerHTML = '<p class="empty">Could not reach the server, or it sent back something unexpected.</p>'; });
         }
-
-        document.querySelectorAll('.person-info-btn').forEach(btn => {
-            btn.addEventListener('click', () => openFriendWeek(btn.dataset.friendId));
-        });
-
-        document.getElementById('modalClose').addEventListener('click', () => modalBackdrop.classList.remove('is-open'));
-        modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) modalBackdrop.classList.remove('is-open'); });
-        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') modalBackdrop.classList.remove('is-open'); });
+        $('dlgClose').addEventListener('click', () => dlg.close());
+        dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 
         // ---------- Add friend ----------
-        document.getElementById('addFriendForm').addEventListener('submit', function (e) {
+        $('addFriendForm').addEventListener('submit', function (e) {
             e.preventDefault();
-            const input = document.getElementById('friendUsername');
-            const btn = document.getElementById('addFriendBtn');
-            const username = input.value.trim();
+            const input = $('friendUsername'), btn = $('addFriendBtn');
+            const username = input.value.trim().replace(/^@/, '');
             if (!username) return;
-
             btn.disabled = true;
-            fetch('api/add-friend.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username })
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    showMessage('Friend request sent!', 'success');
-                    input.value = '';
-                    setTimeout(() => location.reload(), 900);
-                } else {
-                    showMessage(data.error || 'Could not send request.', 'error');
-                }
-            })
-            .catch(() => showMessage('Could not reach the server.', 'error'))
-            .finally(() => { btn.disabled = false; });
+            post('api/add-friend.php', { username })
+                .then(d => {
+                    if (d.success) { say('Friend request sent.', 'ok'); input.value = ''; setTimeout(() => location.reload(), 900); }
+                    else { say(d.error || 'Could not send the request.', 'err'); btn.disabled = false; }
+                })
+                .catch(() => { say(NET, 'err'); btn.disabled = false; });
         });
 
-        // ---------- Accept / decline / remove (delegated) ----------
-        document.body.addEventListener('click', function (e) {
-            const btn = e.target.closest('.btn-pill[data-action]');
+        // ---------- Accept / decline / remove / view week (delegated) ----------
+        document.addEventListener('click', function (e) {
+            const view = e.target.closest('button.view');
+            if (view) { openFriendWeek(view.dataset.friendId); return; }
+
+            const btn = e.target.closest('button[data-action]');
             if (!btn) return;
-
-            const action = btn.dataset.action;
-            const friendshipId = btn.dataset.id;
-            const row = btn.closest('.person-row');
-
+            const action = btn.dataset.action, id = btn.dataset.id;
             if (action === 'remove' && !confirm('Remove this friend?')) return;
 
-            const endpoint = action === 'remove' ? 'api/remove-friend.php' : 'api/respond-friend.php';
-            const body = action === 'remove'
-                ? { friendship_id: friendshipId }
-                : { friendship_id: friendshipId, action: action };
-
+            const url = action === 'remove' ? 'api/remove-friend.php' : 'api/respond-friend.php';
+            const body = action === 'remove' ? { friendship_id: id } : { friendship_id: id, action: action };
             btn.disabled = true;
-            fetch(endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    location.reload();
-                } else {
-                    showMessage(data.error || 'Something went wrong.', 'error');
-                    btn.disabled = false;
-                }
-            })
-            .catch(() => {
-                showMessage('Could not reach the server.', 'error');
-                btn.disabled = false;
-            });
+            post(url, body)
+                .then(d => {
+                    if (d.success) location.reload();
+                    else { say(d.error || 'Something went wrong.', 'err'); btn.disabled = false; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+                })
+                .catch(() => { say(NET, 'err'); btn.disabled = false; });
         });
     </script>
 </body>
+
 </html>

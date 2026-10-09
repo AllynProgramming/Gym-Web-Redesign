@@ -4,6 +4,7 @@
 // that auto-calculates macros from grams (using the local `foods` table).
 
 require_once __DIR__ . '/api/includes/db.php';
+require_once __DIR__ . '/api/includes/timezone.php';
 require_once __DIR__ . '/api/includes/auth.php';
 
 requireLogin();

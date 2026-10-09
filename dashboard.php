@@ -3,6 +3,7 @@
 // Main dashboard after login
 
 require_once __DIR__ . '/api/includes/db.php';
+require_once __DIR__ . '/api/includes/timezone.php';
 require_once __DIR__ . '/api/includes/auth.php';
 
 // Require login
@@ -66,7 +67,7 @@ $stmt = $conn->prepare("
     LEFT JOIN exercises e ON ws.id = e.session_id
     WHERE ws.user_id = ?
     GROUP BY ws.id
-    ORDER BY ws.session_date DESC
+    ORDER BY ws.session_date DESC, ws.id DESC
     LIMIT 5
 ");
 $stmt->bind_param("i", $userId);
@@ -87,7 +88,7 @@ $stmt = $conn->prepare("
     LEFT JOIN exercises e ON ws.id = e.session_id
     WHERE ws.user_id = ?
     GROUP BY ws.id
-    ORDER BY ws.session_date DESC
+    ORDER BY ws.session_date DESC, ws.id DESC
     LIMIT 200
 ");
 $stmt->bind_param("i", $userId);
@@ -143,8 +144,16 @@ $todayName = date('D');
 $last = $recentWorkouts[0] ?? null;
 $when = '';
 if ($last) {
-    $d = (new DateTime('today'))->diff(new DateTime(date('Y-m-d', strtotime($last['session_date']))))->days;
-    $when = $d === 0 ? 'today' : ($d === 1 ? 'yesterday' : $d . ' days ago');
+    $lastDay = date('Y-m-d', strtotime($last['session_date']));
+    $diff = (new DateTime('today'))->diff(new DateTime($lastDay));
+    $d = $diff->days;
+    if ($d === 0) {
+        $when = 'today';
+    } elseif ($diff->invert) {
+        $when = $d === 1 ? 'yesterday' : $d . ' days ago';
+    } else {
+        $when = 'dated ' . date('M j', strtotime($lastDay));
+    } // future-dated entry
 }
 $macros = [
     ['key' => 'calories', 'label' => 'Calories', 'unit' => '', 'color' => 'var(--blue)'],
@@ -623,7 +632,7 @@ function gt_e($s)
 
             <section class="sec">
                 <div class="head">
-                    <h2>Nutrition today</h2><a href="nutrition.php">Log food</a>
+                    <h2>Nutrition today, <?php echo gt_e(date('D, M j')); ?></h2><a href="nutrition.php">Log food</a>
                 </div>
                 <?php foreach ($macros as $m):
                     $v = round($nutritionToday[$m['key']]);
