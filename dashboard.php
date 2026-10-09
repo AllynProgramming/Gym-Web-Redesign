@@ -100,7 +100,7 @@ $workoutsByWeek = [];
 foreach ($allWorkouts as $workout) {
     $date = new DateTime($workout['session_date']);
     $week = $date->format('W');
-    $year = $date->format('Y');
+    $year = $date->format('o');
     $weekKey = $year . '-W' . $week;
 
     if (!isset($workoutsByWeek[$weekKey])) {
@@ -138,7 +138,7 @@ krsort($workoutsByWeek);
 $weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 // ---- View helpers (display only) ----
-$thisWeek = $workoutsByWeek[date('Y') . '-W' . date('W')] ?? null;
+$thisWeek = $workoutsByWeek[date('o') . '-W' . date('W')] ?? null;
 $todayName = date('D');
 $last = $recentWorkouts[0] ?? null;
 $when = '';

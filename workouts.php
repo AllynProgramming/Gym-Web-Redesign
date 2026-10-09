@@ -1,7 +1,6 @@
 <?php
 // workouts.php
-// Full workout history, grouped by week — with a quick-glance summary, a plan filter,
-// and an in-page detail modal (no separate page load, no more "coming soon" placeholder).
+// Full workout history, grouped by week, with a plan filter and an in-page detail dialog.
 
 require_once __DIR__ . '/api/includes/db.php';
 require_once __DIR__ . '/api/includes/auth.php';
@@ -27,7 +26,8 @@ $stmt->close();
 
 // Exercises for every session in ONE query (instead of one query per session)
 $workoutDetails = [];
-$workoutVolume = [];
+$workoutVolume = [];   // working sets only: warm-ups are kept in the history but not counted
+$workoutSets = [];     // working sets only
 if (!empty($workouts)) {
     $sessionIds = array_column($workouts, 'id');
     $placeholders = implode(',', array_fill(0, count($sessionIds), '?'));
@@ -47,29 +47,13 @@ if (!empty($workouts)) {
     foreach ($allExercises as $ex) {
         $sid = $ex['session_id'];
         $workoutDetails[$sid][] = $ex;
-        $workoutVolume[$sid] = ($workoutVolume[$sid] ?? 0) + ($ex['weight'] * $ex['reps'] * $ex['sets']);
+        if (empty($ex['is_warmup'])) {
+            $n = max(1, (int) $ex['sets']);
+            $workoutVolume[$sid] = ($workoutVolume[$sid] ?? 0) + ($ex['weight'] * $ex['reps'] * $n);
+            $workoutSets[$sid] = ($workoutSets[$sid] ?? 0) + $n;
+        }
     }
 }
-
-// Helper: how many distinct exercises (not sets) were done in a session
-function distinctExerciseCount($sessionExercises)
-{
-    return count(array_unique(array_column($sessionExercises, 'exercise_name')));
-}
-
-// Page-level summary (sessions / distinct exercises / total sets / total volume across everything shown)
-$totalSessions = count($workouts);
-$totalExercises = array_sum(array_map(fn($w) => distinctExerciseCount($workoutDetails[$w['id']] ?? []), $workouts));
-$totalSets = array_sum(array_map(fn($w) => count($workoutDetails[$w['id']] ?? []), $workouts));
-$totalVolume = array_sum($workoutVolume);
-
-// Distinct plan names actually in use, for the filter dropdown
-$planFilterOptions = [];
-foreach ($workouts as $w) {
-    $key = $w['plan_name'] ?: '__none__';
-    $planFilterOptions[$key] = $w['plan_name'] ?: 'No plan';
-}
-asort($planFilterOptions);
 
 // Group workouts by ISO week, newest week first
 $workoutsByWeek = [];
@@ -91,11 +75,10 @@ foreach ($workouts as $workout) {
             'workouts' => [],
         ];
     }
-
     $workoutsByWeek[$weekKey]['workouts'][] = $workout;
 }
 
-// JSON blob the modal reads from client-side — avoids a second round trip when "View" is clicked.
+// Data the dialog (and the summary figures) read client-side, so "View" needs no extra request.
 // Sets are grouped by exercise name (each DB row is one set, so several rows can share a name).
 $modalData = [];
 foreach ($workouts as $w) {
@@ -115,705 +98,765 @@ foreach ($workouts as $w) {
     $modalData[$w['id']] = [
         'date' => date('l, F j, Y', strtotime($w['session_date'])),
         'plan' => $w['plan_name'] ?: null,
+        'plan_key' => $w['plan_name'] ?: '__none__',
         'duration' => $w['duration_minutes'],
         'mood' => $w['mood'],
+        'notes' => $w['notes'],
         'volume' => round($workoutVolume[$w['id']] ?? 0),
+        'sets' => (int) ($workoutSets[$w['id']] ?? 0),
         'exercises' => array_values($exerciseGroups),
     ];
+}
+
+// Page-level summary, using the same definitions the page script uses when you filter or delete
+$totalSessions = count($workouts);
+$totalExercises = array_sum(array_map(fn($m) => count($m['exercises']), $modalData));
+$totalSets = array_sum(array_column($modalData, 'sets'));
+$totalVolume = array_sum(array_column($modalData, 'volume'));
+
+// Distinct plan names actually in use, for the filter dropdown
+$planFilterOptions = [];
+foreach ($workouts as $w) {
+    $key = $w['plan_name'] ?: '__none__';
+    $planFilterOptions[$key] = $w['plan_name'] ?: 'No plan';
+}
+asort($planFilterOptions);
+
+function gt_e($s)
+{
+    return htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>My Workouts - GymTrack</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <script src="assets/theme.js"></script>
+    <title>My workouts | GymTrack</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..900&family=Newsreader:opsz,wght@6..72,400..600&display=swap"
+        rel="stylesheet">
     <style>
         :root {
-            color-scheme: dark;
-            --bg-dark: #05030a;
-            --panel: rgba(15, 8, 28, 0.95);
-            --panel-2: rgba(20, 12, 40, 0.98);
-            --text-main: #f6f7ff;
-            --text-muted: #adb2d4;
-            --accent: #7851A9;
-            --accent-strong: #9b6af0;
-            --border: rgba(151, 109, 222, 0.22);
+            --bg: #ECEEEA;
+            --surface: #F7F8F5;
+            --ink: #1D2024;
+            --muted: #5B6168;
+            --rule: #C9CEC9;
+            --accent: #1F4FCC;
+            --on-accent: #fff;
+            --err: #B3261E;
+            --yellow: #EDBE2B;
+            --head: "Archivo", Arial, sans-serif;
+            --body: "Newsreader", Georgia, serif;
+            box-sizing: border-box
         }
 
-        * { margin: 0; padding: 0; box-sizing: border-box; }
+        @media (prefers-color-scheme:dark) {
+            :root {
+                --bg: #16181B;
+                --surface: #1E2125;
+                --ink: #E8EAE6;
+                --muted: #9AA0A6;
+                --rule: #34383D;
+                --accent: #6C93FF;
+                --on-accent: #0F1216;
+                --err: #FF8A80
+            }
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: inherit
+        }
 
         body {
-            font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            min-height: 100vh;
-            background:
-                radial-gradient(circle at top left, rgba(120, 81, 169, 0.18), transparent 20%),
-                radial-gradient(circle at bottom right, rgba(120, 81, 169, 0.12), transparent 18%),
-                var(--bg-dark);
-            color: var(--text-main);
+            margin: 0;
+            background: var(--bg);
+            color: var(--ink);
+            font: 400 1.125rem/1.55 var(--body);
+            padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px)
         }
 
-        /* ---------- Navbar (same pattern site-wide) ---------- */
-        .navbar {
-            background: rgba(5, 5, 15, 0.96);
-            border-bottom: 1px solid rgba(151, 109, 222, 0.2);
-            padding: 22px 32px;
+        :focus-visible {
+            outline: 3px solid var(--accent);
+            outline-offset: 3px
+        }
+
+        a {
+            color: inherit
+        }
+
+        .wrap {
+            max-width: 860px;
+            margin: 0 auto;
+            padding: 0 clamp(1.1rem, 4vw, 2rem)
+        }
+
+        header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 16px;
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            backdrop-filter: blur(16px);
+            gap: 1rem 2rem;
+            flex-wrap: wrap;
+            padding: 1.2rem 0;
+            border-bottom: 1px solid var(--rule)
         }
 
-        .navbar h1 { font-size: 1.9rem; letter-spacing: 0.03em; }
+        .logo {
+            font: 800 1.25rem var(--head);
+            font-stretch: 112%;
+            text-decoration: none
+        }
 
-        .nav-toggle {
-            display: none;
+        nav {
+            display: flex;
+            gap: .3rem 1.4rem;
+            flex-wrap: wrap;
             align-items: center;
-            justify-content: center;
-            width: 46px;
-            height: 46px;
-            border: 1px solid rgba(151, 109, 222, 0.3);
-            border-radius: 50%;
-            background: rgba(255, 255, 255, 0.06);
-            color: #fff;
+            font: 600 .95rem var(--head)
+        }
+
+        nav a {
+            text-decoration: none;
+            padding: .3rem 0
+        }
+
+        nav a:hover {
+            text-decoration: underline;
+            text-underline-offset: 4px
+        }
+
+        .top {
+            display: flex;
+            justify-content: space-between;
+            align-items: end;
+            gap: 1rem;
+            flex-wrap: wrap;
+            padding: 2.2rem 0 1.2rem
+        }
+
+        h1 {
+            font: 850 clamp(2.1rem, 6vw, 3.6rem)/1 var(--head);
+            font-stretch: 118%;
+            letter-spacing: -.025em;
+            margin: 0 0 .5rem
+        }
+
+        .lede {
+            color: var(--muted);
+            margin: 0;
+            max-width: 30rem
+        }
+
+        .btn {
+            display: inline-block;
+            background: var(--accent);
+            color: var(--on-accent);
+            font: 700 1rem var(--head);
+            padding: .75rem 1.3rem;
+            border: 0;
+            border-radius: 6px;
+            text-decoration: none;
             cursor: pointer;
-            transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+            min-height: 2.8rem
         }
 
-        .nav-toggle:hover, .nav-toggle:focus-visible {
-            background: rgba(120, 81, 169, 0.2);
-            border-color: rgba(155, 106, 240, 0.6);
-            transform: translateY(-1px);
+        .btn.alt {
+            background: transparent;
+            color: var(--ink);
+            box-shadow: inset 0 0 0 2px var(--ink)
         }
 
-        .nav-toggle.is-active { background: rgba(120, 81, 169, 0.24); border-color: rgba(155, 106, 240, 0.7); }
-
-        .barbell-icon { display: inline-flex; align-items: center; gap: 4px; }
-        .barbell-icon .bar { width: 18px; height: 4px; border-radius: 999px; background: linear-gradient(90deg, #fff, #c284ff); box-shadow: 0 0 12px rgba(194, 132, 255, 0.3); }
-        .barbell-icon .plate { width: 8px; height: 12px; border-radius: 999px; background: linear-gradient(135deg, #a755ff, #7a3ecf); border: 1px solid rgba(255, 255, 255, 0.28); box-shadow: inset 0 0 4px rgba(255, 255, 255, 0.2); }
-
-        .navbar-right { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
-
-        .navbar-right a {
-            color: var(--text-main);
-            text-decoration: none;
-            padding: 10px 16px;
-            border-radius: 999px;
-            transition: background 0.3s ease;
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            font-weight: 600;
-            font-size: 0.92rem;
+        .btn.danger {
+            background: transparent;
+            color: var(--err);
+            box-shadow: inset 0 0 0 2px var(--err)
         }
 
-        .navbar-right a:hover { background: rgba(120, 81, 169, 0.18); }
-
-        /* ---------- Layout ---------- */
-        .container { max-width: 900px; margin: 0 auto; padding: 32px 24px 60px; }
-
-        .page-head { margin-bottom: 22px; display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; flex-wrap: wrap; }
-        .page-head-text h2 { font-size: clamp(1.8rem, 2.5vw, 2.2rem); margin-bottom: 6px; }
-        .page-head-text p { color: var(--text-muted); font-size: 1rem; }
-
-        .page-head-action a {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 12px 24px;
-            background: linear-gradient(135deg, #a755ff 0%, #7d3fd0 55%, #632a9f 100%);
-            color: #f8f9ff;
-            text-decoration: none;
-            border-radius: 999px;
-            font-weight: 700;
-            font-size: 0.95rem;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-            box-shadow: 0 16px 30px rgba(167, 85, 255, 0.32);
-            border: 1px solid rgba(177, 109, 255, 0.35);
-            white-space: nowrap;
+        .msg {
+            margin: 0 0 1rem;
+            padding: .75rem 1rem;
+            border-radius: 6px;
+            font: 600 1rem var(--head);
+            background: var(--surface);
+            box-shadow: inset 0 0 0 1px var(--rule)
         }
 
-        .page-head-action a:hover { transform: translateY(-2px); box-shadow: 0 18px 34px rgba(194, 132, 255, 0.42); }
+        .msg.err {
+            color: var(--err);
+            box-shadow: inset 0 0 0 2px var(--err)
+        }
 
-        /* ---------- Summary strip ---------- */
-        .summary-strip {
+        .msg[hidden] {
+            display: none
+        }
+
+        .figs {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 12px;
-            margin-bottom: 18px;
+            gap: 1rem 1.5rem;
+            margin: 1rem 0 0
         }
 
-        .summary-chip {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 16px;
-            padding: 14px 16px;
+        .figs div {
+            border-top: 2px solid var(--ink);
+            padding-top: .4rem
         }
 
-        .summary-chip p { font-size: 0.78rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
-        .summary-chip h4 { font-size: 1.3rem; color: #fff; }
+        .figs dt {
+            font: 600 .85rem var(--head);
+            color: var(--muted)
+        }
 
-        /* ---------- Filter bar ---------- */
-        .filter-bar {
+        .figs dd {
+            margin: 0;
+            font: 800 1.9rem/1.15 var(--head);
+            font-stretch: 112%;
+            font-variant-numeric: tabular-nums
+        }
+
+        .filter {
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 20px;
+            align-items: end;
+            gap: 1rem;
             flex-wrap: wrap;
+            padding: 1.6rem 0 .4rem
         }
 
-        .filter-bar label { font-size: 0.85rem; color: var(--text-muted); font-weight: 600; }
-
-        .filter-bar select {
-            padding: 10px 14px;
-            border-radius: 999px;
-            border: 1px solid rgba(151, 109, 222, 0.28);
-            background: var(--panel);
-            color: var(--text-main);
-            font-size: 0.9rem;
-            font-family: inherit;
-            min-width: 180px;
+        .field {
+            display: grid;
+            gap: .3rem
         }
 
-        .filter-bar select:focus { outline: none; border-color: rgba(155, 106, 240, 0.8); }
-        .filter-bar select option { background: #14092b; color: #fff; }
-
-        #filterCount { color: var(--text-muted); font-size: 0.88rem; }
-
-        /* ---------- Empty states ---------- */
-        .empty-state {
-            text-align: center;
-            padding: 60px 32px;
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 24px;
+        label {
+            font: 700 .85rem var(--head)
         }
 
-        .empty-state h3 { font-size: 1.4rem; margin-bottom: 12px; color: var(--text-main); }
-        .empty-state p { color: var(--text-muted); margin-bottom: 24px; font-size: 1rem; }
-
-        .empty-state a {
-            display: inline-block;
-            padding: 12px 24px;
-            background: rgba(151, 109, 222, 0.2);
-            border: 1px solid rgba(151, 109, 222, 0.4);
-            color: #d8b8ff;
-            text-decoration: none;
-            border-radius: 999px;
-            font-weight: 600;
-            transition: all 0.2s ease;
+        select {
+            font: 400 1.05rem var(--body);
+            color: var(--ink);
+            background: var(--surface);
+            border: 2px solid var(--rule);
+            border-radius: 4px;
+            padding: .6rem .7rem;
+            min-width: 13rem;
+            min-height: 2.8rem
         }
 
-        .empty-state a:hover { background: rgba(151, 109, 222, 0.3); border-color: rgba(155, 106, 240, 0.6); }
-
-        .no-match-note {
-            display: none;
-            text-align: center;
-            padding: 30px;
-            color: var(--text-muted);
-            font-size: 0.95rem;
+        select:focus-visible {
+            outline: 3px solid var(--accent);
+            outline-offset: 1px;
+            border-color: var(--accent)
         }
 
-        /* ---------- Week cards ---------- */
-        .week-card {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 24px;
-            padding: 26px;
-            margin-bottom: 20px;
+        #filterCount {
+            font: 600 .95rem var(--head);
+            color: var(--muted)
         }
 
-        .week-header {
-            margin-bottom: 18px;
-            padding-bottom: 14px;
-            border-bottom: 1px solid rgba(151, 109, 222, 0.15);
+        .week {
+            padding: 1.4rem 0 .6rem;
+            margin-top: 1.2rem;
+            border-top: 2px solid var(--ink);
+            scroll-margin-top: 1rem
+        }
+
+        .week:target {
+            box-shadow: -.7rem 0 0 -.3rem var(--accent)
+        }
+
+        .wh {
             display: flex;
             justify-content: space-between;
             align-items: baseline;
+            gap: .5rem 1rem;
             flex-wrap: wrap;
-            gap: 8px;
+            margin-bottom: .4rem
         }
 
-        .week-title { font-size: 1.2rem; font-weight: 700; color: var(--text-main); }
-        .week-range { font-size: 0.88rem; color: var(--text-muted); }
+        .wh h2 {
+            font: 750 1.2rem var(--head);
+            margin: 0
+        }
 
-        .workouts-list { display: grid; gap: 14px; }
+        .wh span {
+            font: 600 .95rem var(--head);
+            color: var(--muted)
+        }
 
-        .workout-item {
-            background: var(--panel-2);
-            border: 1px solid rgba(151, 109, 222, 0.12);
-            border-radius: 16px;
-            padding: 16px;
-            transition: background 0.2s ease, border-color 0.2s ease, opacity 0.25s ease, transform 0.25s ease;
+        .row {
             display: grid;
-            grid-template-columns: 1fr auto;
-            gap: 16px;
+            grid-template-columns: 7.5rem 1fr auto;
+            gap: .5rem 1rem;
             align-items: center;
+            padding: .8rem 0;
+            border-bottom: 1px solid var(--rule)
         }
 
-        .workout-item:hover { background: rgba(30, 15, 50, 0.9); border-color: rgba(155, 106, 240, 0.2); }
-        .workout-item.removing { opacity: 0; transform: scale(0.97); }
-
-        .workout-info { min-width: 0; }
-
-        .workout-date-day {
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--text-muted);
-            font-weight: 600;
-            margin-bottom: 4px;
+        .row .d {
+            font: 700 1rem var(--head)
         }
 
-        .workout-name { font-size: 1.05rem; font-weight: 700; color: var(--text-main); margin-bottom: 6px; word-break: break-word; }
+        .row .p {
+            font: 700 1.05rem var(--head);
+            overflow-wrap: anywhere
+        }
 
-        .workout-stats { display: flex; gap: 14px; flex-wrap: wrap; }
+        .row .s {
+            color: var(--muted);
+            font-size: 1rem
+        }
 
-        .stat { display: flex; align-items: baseline; gap: 4px; font-size: 0.85rem; }
-        .stat-label { color: var(--text-muted); }
-        .stat-value { font-weight: 700; color: var(--accent-strong); }
+        .acts {
+            display: flex;
+            gap: .4rem
+        }
 
-        .workout-actions { display: flex; gap: 8px; flex-direction: column; }
-
-        .workout-actions button {
-            padding: 8px 14px;
-            border: 1px solid rgba(151, 109, 222, 0.3);
-            background: rgba(151, 109, 222, 0.08);
-            color: #d8b8ff;
-            border-radius: 999px;
-            font-weight: 600;
-            font-size: 0.82rem;
+        .acts button {
+            font: 700 .9rem var(--head);
+            min-height: 2.4rem;
+            padding: .3rem .8rem;
+            border-radius: 6px;
             cursor: pointer;
-            transition: all 0.2s ease;
-            white-space: nowrap;
+            background: transparent;
+            color: var(--ink);
+            border: 2px solid var(--rule)
         }
 
-        .workout-actions button:hover { background: rgba(151, 109, 222, 0.16); border-color: rgba(155, 106, 240, 0.5); }
-
-        .workout-actions button.delete { background: rgba(255, 94, 94, 0.1); border-color: rgba(255, 94, 94, 0.3); color: #ffb3b3; }
-        .workout-actions button.delete:hover { background: rgba(255, 94, 94, 0.18); border-color: rgba(255, 94, 94, 0.5); }
-
-        /* ---------- Detail modal ---------- */
-        .modal-backdrop {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(5, 3, 10, 0.72);
-            backdrop-filter: blur(6px);
-            z-index: 50;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
+        .acts button:hover {
+            border-color: var(--ink)
         }
 
-        .modal-backdrop.is-open { display: flex; }
-
-        .modal-panel {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 24px;
-            max-width: 480px;
-            width: 100%;
-            max-height: 85vh;
-            overflow-y: auto;
-            padding: 28px;
-            box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
+        .acts button.del {
+            color: var(--err)
         }
 
-        .modal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 4px; }
-        .modal-head h3 { font-size: 1.25rem; color: #fff; }
-
-        .modal-close {
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: var(--text-main);
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            font-size: 1rem;
-            cursor: pointer;
-            flex-shrink: 0;
+        .acts button.del:hover {
+            border-color: var(--err)
         }
 
-        .modal-close:hover { background: rgba(255, 255, 255, 0.12); }
-
-        .modal-plan-chip {
-            display: inline-block;
-            background: rgba(151, 109, 222, 0.16);
-            color: #d8b8ff;
-            padding: 4px 12px;
-            border-radius: 999px;
-            font-size: 0.8rem;
-            font-weight: 700;
-            margin-bottom: 10px;
+        .row.gone {
+            opacity: 0
         }
 
-        .modal-facts { display: flex; gap: 16px; color: var(--text-muted); font-size: 0.88rem; margin-bottom: 20px; flex-wrap: wrap; }
-        .modal-facts strong { color: #fff; }
-
-        .modal-exercise {
-            background: var(--panel-2);
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 14px;
-            margin-bottom: 10px;
+        @media (prefers-reduced-motion:no-preference) {
+            .row {
+                transition: opacity .2s ease
+            }
         }
 
-        .modal-exercise-top { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
-        .modal-exercise-top strong { font-size: 0.95rem; }
-        .modal-exercise-notes { color: var(--text-muted); font-size: 0.84rem; margin-top: 6px; }
+        .empty,
+        .nomatch {
+            background: var(--surface);
+            box-shadow: 0 0 0 1px var(--rule);
+            border-radius: 10px;
+            padding: 1.8rem;
+            margin-top: 1.5rem
+        }
 
-        .modal-set-line {
+        .empty h2 {
+            font: 750 1.3rem var(--head);
+            margin: 0 0 .3rem
+        }
+
+        .empty p,
+        .nomatch {
+            color: var(--muted);
+            margin: 0 0 1rem
+        }
+
+        .nomatch {
+            margin: 1.4rem 0 0
+        }
+
+        .nomatch[hidden] {
+            display: none
+        }
+
+        dialog {
+            border: 0;
+            border-radius: 10px;
+            padding: 1.5rem;
+            max-width: 30rem;
+            width: calc(100% - 2rem);
+            max-height: 90vh;
+            background: var(--surface);
+            color: var(--ink);
+            box-shadow: 0 0 0 1px var(--rule), 0 20px 50px rgba(0, 0, 0, .3)
+        }
+
+        dialog::backdrop {
+            background: rgba(0, 0, 0, .5)
+        }
+
+        .dh {
             display: flex;
             justify-content: space-between;
-            padding: 5px 0;
-            font-size: 0.88rem;
-            border-top: 1px solid rgba(151, 109, 222, 0.1);
+            align-items: start;
+            gap: 1rem
         }
-        .modal-set-line:first-of-type { border-top: none; }
-        .modal-set-label { color: var(--text-muted); }
-        .modal-set-line span:last-child { font-weight: 700; color: #d8b8ff; }
-        .modal-set-line.is-warmup .modal-set-label { color: #ffb454; }
-        .modal-set-line.is-warmup span:last-child { color: #ffb454; }
 
-        .modal-actions { margin-top: 18px; display: flex; justify-content: flex-end; }
+        .dh h2 {
+            font: 800 1.4rem/1.2 var(--head);
+            margin: 0
+        }
 
-        /* ---------- Mobile ---------- */
-        @media (max-width: 720px) {
-            .page-head { flex-direction: column; align-items: flex-start; }
-            .summary-strip { grid-template-columns: 1fr 1fr; }
-            .filter-bar { width: 100%; }
-            .filter-bar select { flex: 1; }
+        .x {
+            border: 0;
+            background: transparent;
+            color: var(--muted);
+            font: 700 1.4rem/1 var(--head);
+            width: 2.4rem;
+            height: 2.4rem;
+            border-radius: 6px;
+            cursor: pointer;
+            flex: none
+        }
 
-            .week-card { padding: 18px; }
+        .x:hover {
+            color: var(--ink);
+            box-shadow: inset 0 0 0 1.5px var(--ink)
+        }
 
-            .workout-item { grid-template-columns: 1fr; gap: 12px; }
-            .workout-actions { flex-direction: row; }
-            .workout-actions button { flex: 1; }
+        .plan {
+            font: 700 1rem var(--head);
+            color: var(--accent);
+            margin: .2rem 0 0
+        }
 
-            .container { padding: 20px 16px 40px; }
-            .navbar { padding: 16px 20px; }
-            .navbar h1 { font-size: 1.6rem; }
-            .nav-toggle { display: inline-flex; }
+        .facts {
+            display: flex;
+            gap: .3rem 1.2rem;
+            flex-wrap: wrap;
+            font: 600 .95rem var(--head);
+            color: var(--muted);
+            margin: .6rem 0 1rem
+        }
 
-            .navbar-right {
-                display: none;
-                position: absolute;
-                top: calc(100% + 10px);
-                right: 20px;
-                left: 20px;
-                flex-direction: column;
-                align-items: stretch;
-                padding: 14px;
-                background: rgba(5, 5, 15, 0.98);
-                border: 1px solid rgba(151, 109, 222, 0.24);
-                border-radius: 18px;
-                box-shadow: 0 16px 32px rgba(0, 0, 0, 0.24);
+        .ex {
+            border-top: 2px solid var(--ink);
+            padding: .7rem 0 .4rem
+        }
+
+        .ex h3 {
+            font: 750 1.05rem var(--head);
+            margin: 0 0 .3rem;
+            overflow-wrap: anywhere
+        }
+
+        .sl {
+            display: flex;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: .4rem 0;
+            border-bottom: 1px solid var(--rule);
+            font-variant-numeric: tabular-nums
+        }
+
+        .sl span:first-child {
+            font: 600 .95rem var(--head);
+            color: var(--muted)
+        }
+
+        .sl.wu span:first-child {
+            background: var(--yellow);
+            color: #1D2024;
+            border-radius: 20px;
+            padding: 0 .5rem;
+            font-size: .8rem;
+            align-self: center
+        }
+
+        .sl span:last-child {
+            font: 700 1rem var(--head)
+        }
+
+        .exn {
+            color: var(--muted);
+            font-size: 1rem;
+            margin: .4rem 0 0
+        }
+
+        .da {
+            display: flex;
+            gap: .6rem;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            margin-top: 1.2rem
+        }
+
+        footer {
+            padding: 1rem 0 3rem
+        }
+
+        @media (max-width:640px) {
+            .figs {
+                grid-template-columns: 1fr 1fr
             }
 
-            .navbar-right.is-open { display: flex; }
-            .navbar-right a { width: 100%; text-align: center; justify-content: center; }
-        }
+            .figs dd {
+                font-size: 1.5rem
+            }
 
-        @media (max-width: 420px) {
-            .summary-strip { grid-template-columns: 1fr; }
+            .row {
+                grid-template-columns: 1fr auto
+            }
+
+            .row .d {
+                grid-column: 1/-1;
+                color: var(--muted)
+            }
+
+            .acts {
+                grid-column: 1/-1
+            }
+
+            .acts button {
+                flex: 1
+            }
         }
     </style>
 </head>
+
 <body>
-    <nav class="navbar">
-        <h1>Personal GymTracker </h1>
-        <button class="nav-toggle" id="navToggle" aria-label="Toggle navigation" type="button">
-            <span class="barbell-icon" aria-hidden="true">
-                <span class="plate"></span>
-                <span class="bar"></span>
-                <span class="plate"></span>
-            </span>
-        </button>
-        <div class="navbar-right" id="navMenu">
-            <a href="dashboard.php">Dashboard</a>
-            <a href="nutrition.php">Nutrition</a>
-            <a href="profile.php">Profile</a>
-            <a href="friends.php">Friends</a>
-            <a href="api/logout.php">Logout</a>
-        </div>
-    </nav>
+    <div class="wrap">
+        <header>
+            <a class="logo" href="dashboard.php">GymTrack</a>
+            <nav aria-label="Main">
+                <a href="dashboard.php">Dashboard</a>
+                <a href="log-workout.php">Log workout</a>
+                <a href="nutrition.php">Nutrition</a>
+                <a href="profile.php">Profile</a>
+                <a href="friends.php">Friends</a>
+                <a href="api/logout.php">Log out</a>
+            </nav>
+        </header>
 
-    <div class="container">
-        <div class="page-head">
-            <div class="page-head-text">
-                <h2>My Workouts</h2>
-                <p>Every session you've logged, grouped by week.</p>
-            </div>
-            <div class="page-head-action">
-                <a href="log-workout.php">+ Log Workout</a>
-            </div>
-        </div>
-
-        <?php if (empty($workouts)): ?>
-            <div class="empty-state">
-                <h3>No workouts logged yet</h3>
-                <p>Start tracking your fitness journey by logging your first workout session.</p>
-                <a href="log-workout.php">Log Your First Workout</a>
-            </div>
-        <?php else: ?>
-            <div class="summary-strip">
-                <div class="summary-chip"><p>Sessions</p><h4 id="statSessions"><?php echo $totalSessions; ?></h4></div>
-                <div class="summary-chip"><p>Exercises logged</p><h4 id="statExercises"><?php echo $totalExercises; ?></h4></div>
-                <div class="summary-chip"><p>Sets logged</p><h4 id="statSets"><?php echo $totalSets; ?></h4></div>
-                <div class="summary-chip"><p>Total volume</p><h4 id="statVolume"><?php echo number_format($totalVolume); ?> kg</h4></div>
-            </div>
-
-            <div class="filter-bar">
+        <main>
+            <div class="top">
                 <div>
-                    <label for="planFilter">Filter by plan &nbsp;</label>
-                    <select id="planFilter">
-                        <option value="__all__">All plans</option>
-                        <?php foreach ($planFilterOptions as $value => $label): ?>
-                            <option value="<?php echo htmlspecialchars($value); ?>"><?php echo htmlspecialchars($label); ?></option>
-                        <?php endforeach; ?>
-                    </select>
+                    <h1>My workouts</h1>
+                    <p class="lede">Every session you've logged, week by week.</p>
                 </div>
-                <span id="filterCount"><?php echo $totalSessions; ?> session<?php echo $totalSessions === 1 ? '' : 's'; ?></span>
+                <a class="btn" href="log-workout.php">Log workout</a>
             </div>
 
-            <p class="no-match-note" id="noMatchNote">No sessions match that filter.</p>
+            <div class="msg err" id="pageMessage" role="alert" hidden></div>
 
-            <?php foreach ($workoutsByWeek as $weekKey => $weekData): ?>
-                <div class="week-card" id="week-<?php echo htmlspecialchars($weekKey); ?>">
-                    <div class="week-header">
-                        <span class="week-title">Week <?php echo $weekData['week']; ?></span>
-                        <span class="week-range">
-                            <?php
-                                $startDate = new DateTime($weekData['startDate']);
-                                $endDate = new DateTime($weekData['endDate']);
-                                echo $startDate->format('M j') . ' – ' . $endDate->format('M j, Y');
-                            ?>
-                        </span>
+            <?php if (empty($workouts)): ?>
+                <div class="empty">
+                    <h2>No workouts logged yet</h2>
+                    <p>Log your first session and it will show up here, grouped by week.</p>
+                    <a class="btn" href="log-workout.php">Log your first workout</a>
+                </div>
+            <?php else: ?>
+                <dl class="figs" aria-live="polite">
+                    <div>
+                        <dt>Sessions</dt>
+                        <dd id="statSessions"><?php echo $totalSessions; ?></dd>
                     </div>
+                    <div>
+                        <dt>Exercises</dt>
+                        <dd id="statExercises"><?php echo $totalExercises; ?></dd>
+                    </div>
+                    <div>
+                        <dt>Working sets</dt>
+                        <dd id="statSets"><?php echo $totalSets; ?></dd>
+                    </div>
+                    <div>
+                        <dt>Volume</dt>
+                        <dd id="statVolume"><?php echo number_format($totalVolume); ?> kg</dd>
+                    </div>
+                </dl>
 
-                    <div class="workouts-list">
-                        <?php foreach ($weekData['workouts'] as $workout): ?>
-                            <?php $planKey = $workout['plan_name'] ?: '__none__'; ?>
-                            <div class="workout-item" data-plan="<?php echo htmlspecialchars($planKey); ?>" data-id="<?php echo $workout['id']; ?>">
-                                <div class="workout-info">
-                                    <div class="workout-date-day"><?php echo date('l, F j', strtotime($workout['session_date'])); ?></div>
-                                    <div class="workout-name"><?php echo htmlspecialchars($workout['plan_name'] ?: 'Workout'); ?></div>
-                                    <div class="workout-stats">
-                                        <div class="stat"><span class="stat-label">Exercises</span> <span class="stat-value"><?php echo distinctExerciseCount($workoutDetails[$workout['id']] ?? []); ?></span></div>
-                                        <?php if ($workout['duration_minutes']): ?>
-                                            <div class="stat"><span class="stat-label">Duration</span> <span class="stat-value"><?php echo $workout['duration_minutes']; ?> min</span></div>
-                                        <?php endif; ?>
-                                        <?php if ($workout['mood']): ?>
-                                            <div class="stat"><span class="stat-label">Mood</span> <span class="stat-value"><?php echo htmlspecialchars(ucfirst($workout['mood'])); ?></span></div>
-                                        <?php endif; ?>
+                <div class="filter">
+                    <div class="field">
+                        <label for="planFilter">Show</label>
+                        <select id="planFilter">
+                            <option value="__all__">All plans</option>
+                            <?php foreach ($planFilterOptions as $value => $label): ?>
+                                <option value="<?php echo gt_e($value); ?>"><?php echo gt_e($label); ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <span id="filterCount" aria-live="polite"><?php echo $totalSessions; ?>
+                        session<?php echo $totalSessions === 1 ? '' : 's'; ?></span>
+                </div>
+
+                <p class="nomatch" id="noMatchNote" hidden>No sessions use that plan. Pick another plan or show all plans.
+                </p>
+
+                <?php foreach ($workoutsByWeek as $weekKey => $weekData):
+                    $startDate = new DateTime($weekData['startDate']);
+                    $endDate = new DateTime($weekData['endDate']);
+                    $n = count($weekData['workouts']);
+                    $mins = array_sum(array_map(fn($w) => (int) $w['duration_minutes'], $weekData['workouts'])); ?>
+                    <section class="week" id="week-<?php echo gt_e($weekKey); ?>"
+                        aria-label="Week <?php echo gt_e($weekData['week']); ?>">
+                        <div class="wh">
+                            <h2>Week <?php echo gt_e($weekData['week']); ?>, <?php echo gt_e($startDate->format('M j')); ?> to
+                                <?php echo gt_e($endDate->format('M j, Y')); ?></h2>
+                            <span class="wsum" data-total="<?php echo $n; ?>"><?php echo $n; ?>
+                                session<?php echo $n === 1 ? '' : 's'; ?><?php echo $mins ? ', ' . $mins . ' min' : ''; ?></span>
+                        </div>
+                        <?php foreach ($weekData['workouts'] as $workout):
+                            $m = $modalData[$workout['id']]; ?>
+                            <div class="row" data-id="<?php echo (int) $workout['id']; ?>"
+                                data-plan="<?php echo gt_e($m['plan_key']); ?>">
+                                <div class="d"><?php echo gt_e(date('D, M j', strtotime($workout['session_date']))); ?></div>
+                                <div>
+                                    <div class="p"><?php echo gt_e($workout['plan_name'] ?: 'Workout'); ?></div>
+                                    <div class="s"><?php echo count($m['exercises']); ?>
+                                        exercise<?php echo count($m['exercises']) === 1 ? '' : 's'; ?><?php echo $workout['duration_minutes'] ? ', ' . (int) $workout['duration_minutes'] . ' min' : ''; ?><?php echo $workout['mood'] ? ', felt ' . gt_e($workout['mood']) : ''; ?>
                                     </div>
                                 </div>
-                                <div class="workout-actions">
-                                    <button type="button" class="view-btn" data-id="<?php echo $workout['id']; ?>">View</button>
-                                    <button type="button" class="edit-btn" data-id="<?php echo $workout['id']; ?>">Edit</button>
-                                    <button type="button" class="delete" data-id="<?php echo $workout['id']; ?>">Delete</button>
+                                <div class="acts">
+                                    <button type="button" class="view" data-id="<?php echo (int) $workout['id']; ?>">View</button>
+                                    <button type="button" class="edit" data-id="<?php echo (int) $workout['id']; ?>">Edit</button>
+                                    <button type="button" class="del" data-id="<?php echo (int) $workout['id']; ?>">Delete</button>
                                 </div>
                             </div>
                         <?php endforeach; ?>
-                    </div>
-                </div>
-            <?php endforeach; ?>
-        <?php endif; ?>
+                    </section>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </main>
+        <footer></footer>
     </div>
 
-    <!-- Detail modal — populated from WORKOUTS_DATA, no extra network request -->
-    <div class="modal-backdrop" id="modalBackdrop">
-        <div class="modal-panel" id="modalPanel">
-            <div class="modal-head">
-                <div>
-                    <div id="modalPlanChip"></div>
-                    <h3 id="modalDate"></h3>
-                </div>
-                <button type="button" class="modal-close" id="modalClose" aria-label="Close">×</button>
+    <dialog id="detailDialog" aria-labelledby="dlgDate">
+        <div class="dh">
+            <div>
+                <h2 id="dlgDate"></h2>
+                <p class="plan" id="dlgPlan"></p>
             </div>
-            <div class="modal-facts" id="modalFacts"></div>
-            <div id="modalExercises"></div>
-            <div class="modal-actions">
-                <button type="button" class="edit-btn" id="modalEditBtn" style="border:1px solid rgba(120,81,169,0.4); background:rgba(120,81,169,0.14); color:#d8b8ff; padding:10px 18px; border-radius:999px; font-weight:700; cursor:pointer;">Edit this workout</button>
-                <button type="button" class="delete" id="modalDeleteBtn" style="border:1px solid rgba(255,94,94,0.3); background:rgba(255,94,94,0.1); color:#ffb3b3; padding:10px 18px; border-radius:999px; font-weight:700; cursor:pointer;">Delete this workout</button>
-            </div>
+            <button type="button" class="x" id="dlgClose" aria-label="Close">&times;</button>
         </div>
-    </div>
+        <div class="facts" id="dlgFacts"></div>
+        <div id="dlgExercises"></div>
+        <div class="da">
+            <button type="button" class="btn danger" id="dlgDelete">Delete workout</button>
+            <button type="button" class="btn" id="dlgEdit">Edit workout</button>
+        </div>
+    </dialog>
 
     <script>
         const WORKOUTS_DATA = <?php echo json_encode($modalData); ?>;
+        const $ = id => document.getElementById(id);
+        function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+        function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
+        function showError(text) { const m = $('pageMessage'); m.textContent = text; m.hidden = false; window.scrollTo({ top: 0, behavior: 'smooth' }); }
 
-        // ---------- Nav toggle ----------
-        const navToggle = document.getElementById('navToggle');
-        const navMenu = document.getElementById('navMenu');
-
-        if (navToggle && navMenu) {
-            navToggle.addEventListener('click', function () {
-                navMenu.classList.toggle('is-open');
-                navToggle.classList.toggle('is-active');
-            });
-
-            document.addEventListener('click', function (event) {
-                if (!navToggle.contains(event.target) && !navMenu.contains(event.target)) {
-                    navMenu.classList.remove('is-open');
-                    navToggle.classList.remove('is-active');
-                }
-            });
-        }
-
-        // ---------- Plan filter (client-side, no reload) ----------
-        const planFilter = document.getElementById('planFilter');
-        const filterCount = document.getElementById('filterCount');
-        const noMatchNote = document.getElementById('noMatchNote');
-
+        // ---------- Filter and summary (summary always matches what is shown) ----------
+        const planFilter = $('planFilter');
         function applyFilter() {
+            if (!planFilter) return;
             const value = planFilter.value;
-            let visibleCount = 0;
+            let sessions = 0, exercises = 0, sets = 0, volume = 0;
 
-            document.querySelectorAll('.workout-item').forEach(item => {
-                const match = value === '__all__' || item.dataset.plan === value;
-                item.style.display = match ? '' : 'none';
-                if (match) visibleCount++;
+            document.querySelectorAll('.row').forEach(row => {
+                const show = value === '__all__' || row.dataset.plan === value;
+                row.hidden = !show;
+                row.style.display = show ? '' : 'none';
+                const d = WORKOUTS_DATA[row.dataset.id];
+                if (show && d) { sessions++; exercises += d.exercises.length; sets += d.sets; volume += d.volume; }
             });
-
-            document.querySelectorAll('.week-card').forEach(card => {
-                const hasVisible = [...card.querySelectorAll('.workout-item')].some(i => i.style.display !== 'none');
-                card.style.display = hasVisible ? '' : 'none';
+            document.querySelectorAll('.week').forEach(w => {
+                const any = [...w.querySelectorAll('.row')].some(r => r.style.display !== 'none');
+                w.style.display = any ? '' : 'none';
+                let n = 0, mins = 0;
+                w.querySelectorAll('.row').forEach(r => { if (r.style.display !== 'none') { n++; mins += parseInt((WORKOUTS_DATA[r.dataset.id] || {}).duration, 10) || 0; } });
+                const sum = w.querySelector('.wsum');
+                if (sum) sum.textContent = plural(n, 'session') + (mins ? ', ' + mins + ' min' : '');
             });
-
-            filterCount.textContent = visibleCount + ' session' + (visibleCount === 1 ? '' : 's');
-            noMatchNote.style.display = visibleCount === 0 ? 'block' : 'none';
+            $('statSessions').textContent = sessions;
+            $('statExercises').textContent = exercises;
+            $('statSets').textContent = sets;
+            $('statVolume').textContent = Math.round(volume).toLocaleString() + ' kg';
+            $('filterCount').textContent = plural(sessions, 'session');
+            $('noMatchNote').hidden = sessions !== 0;
         }
-
         if (planFilter) planFilter.addEventListener('change', applyFilter);
 
-        // ---------- Detail modal ----------
-        const modalBackdrop = document.getElementById('modalBackdrop');
-        let activeWorkoutId = null;
+        // ---------- Detail dialog ----------
+        const dlg = $('detailDialog');
+        let activeId = null;
 
-        function openModal(id) {
-            const data = WORKOUTS_DATA[id];
-            if (!data) return;
-            activeWorkoutId = id;
+        function openDetail(id) {
+            const d = WORKOUTS_DATA[id];
+            if (!d) return;
+            activeId = id;
+            $('dlgDate').textContent = d.date;
+            $('dlgPlan').textContent = d.plan || '';
+            $('dlgPlan').hidden = !d.plan;
 
-            document.getElementById('modalDate').textContent = data.date;
-            document.getElementById('modalPlanChip').innerHTML = data.plan
-                ? `<span class="modal-plan-chip">${escapeHtml(data.plan)}</span>` : '';
+            const facts = [plural(d.exercises.length, 'exercise'), plural(d.sets, 'working set'), d.volume.toLocaleString() + ' kg volume'];
+            if (d.duration) facts.push(d.duration + ' min');
+            if (d.mood) facts.push('Felt ' + d.mood);
+            $('dlgFacts').innerHTML = facts.map(f => '<span>' + esc(f) + '</span>').join('');
 
-            const facts = [`${data.exercises.length} exercise${data.exercises.length === 1 ? '' : 's'}`];
-            if (data.duration) facts.push(`${data.duration} min`);
-            if (data.mood) facts.push(`Felt ${data.mood}`);
-            facts.push(`${data.volume.toLocaleString()} kg total volume`);
-            document.getElementById('modalFacts').innerHTML = facts.map(f => `<span><strong>${f}</strong></span>`).join('');
-
-            document.getElementById('modalExercises').innerHTML = data.exercises.map(ex => {
-                let workingCount = 0;
-                const setLines = ex.sets.map(set => {
-                    const label = set.is_warmup ? 'Warmup' : ('Set ' + (++workingCount));
-                    return `<div class="modal-set-line${set.is_warmup ? ' is-warmup' : ''}">
-                                <span class="modal-set-label">${label}</span>
-                                <span>${set.weight}kg × ${set.reps}</span>
-                            </div>`;
+            $('dlgExercises').innerHTML = d.exercises.map(ex => {
+                let n = 0;
+                const lines = ex.sets.map(s => {
+                    const label = s.is_warmup ? 'Warm-up' : 'Set ' + (++n);
+                    return '<div class="sl' + (s.is_warmup ? ' wu' : '') + '"><span>' + label + '</span><span>' + esc(s.weight) + ' kg x ' + esc(s.reps) + '</span></div>';
                 }).join('');
+                return '<div class="ex"><h3>' + esc(ex.name) + '</h3>' + lines + (ex.notes ? '<p class="exn">' + esc(ex.notes) + '</p>' : '') + '</div>';
+            }).join('') || '<p class="exn">No exercises were recorded for this session.</p>';
+            if (d.notes) $('dlgExercises').insertAdjacentHTML('beforeend', '<p class="exn">' + esc(d.notes) + '</p>');
 
-                return `
-                    <div class="modal-exercise">
-                        <div class="modal-exercise-top">
-                            <strong>${escapeHtml(ex.name)}</strong>
-                        </div>
-                        ${setLines}
-                        ${ex.notes ? `<div class="modal-exercise-notes">${escapeHtml(ex.notes)}</div>` : ''}
-                    </div>
-                `;
-            }).join('') || '<p style="color:var(--text-muted);">No exercises recorded for this session.</p>';
-
-            modalBackdrop.classList.add('is-open');
+            dlg.showModal();
         }
+        $('dlgClose') && $('dlgClose').addEventListener('click', () => dlg.close());
+        dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+        dlg.addEventListener('close', () => { activeId = null; });
 
-        function closeModal() {
-            modalBackdrop.classList.remove('is-open');
-            activeWorkoutId = null;
-        }
-
-        function escapeHtml(str) {
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
-        }
-
-        document.getElementById('modalClose').addEventListener('click', closeModal);
-        modalBackdrop.addEventListener('click', (e) => { if (e.target === modalBackdrop) closeModal(); });
-        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
-
-        // ---------- Delete (removes the row in place, no full page reload) ----------
-        function deleteWorkout(id, rowEl) {
+        // ---------- Delete (removes the row in place) ----------
+        function deleteWorkout(id) {
             if (!confirm('Delete this workout? This cannot be undone.')) return;
-
             fetch('api/delete-workout.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ workout_id: id })
             })
-            .then(res => res.json())
-            .then(data => {
-                if (!data.success) {
-                    alert('Error: ' + (data.error || 'Could not delete workout'));
-                    return;
-                }
-
-                delete WORKOUTS_DATA[id];
-                if (activeWorkoutId === id) closeModal();
-
-                const row = rowEl || document.querySelector(`.workout-item[data-id="${id}"]`);
-                if (row) {
-                    const weekCard = row.closest('.week-card');
-                    row.classList.add('removing');
+                .then(r => r.text())
+                .then(t => { try { return JSON.parse(t); } catch (e) { throw new Error('bad response'); } })
+                .then(data => {
+                    if (!data.success) { showError(data.error || 'The workout could not be deleted.'); return; }
+                    delete WORKOUTS_DATA[id];
+                    if (dlg.open) dlg.close();
+                    const row = document.querySelector('.row[data-id="' + id + '"]');
+                    if (!row) return;
+                    const week = row.closest('.week');
+                    row.classList.add('gone');
                     setTimeout(() => {
                         row.remove();
-                        if (weekCard && !weekCard.querySelector('.workout-item')) weekCard.remove();
+                        if (week && !week.querySelector('.row')) week.remove();
+                        if (!document.querySelector('.row')) { location.reload(); return; }
                         applyFilter();
-                    }, 200);
-                }
-
-                // Update the summary strip
-                const sessionsEl = document.getElementById('statSessions');
-                const exercisesEl = document.getElementById('statExercises');
-                const volumeEl = document.getElementById('statVolume');
-                if (sessionsEl) sessionsEl.textContent = Math.max(0, parseInt(sessionsEl.textContent) - 1);
-            })
-            .catch(() => alert('Could not reach the server.'));
+                    }, 220);
+                })
+                .catch(() => showError('Could not reach the server, or it sent back something unexpected. Nothing was deleted.'));
         }
 
-        // ---------- Delegated clicks for View / Delete / modal delete ----------
-        document.querySelectorAll('.view-btn').forEach(btn => {
-            btn.addEventListener('click', () => openModal(btn.dataset.id));
+        // ---------- Row buttons ----------
+        document.addEventListener('click', e => {
+            const b = e.target.closest('button[data-id]');
+            if (!b) return;
+            if (b.classList.contains('view')) openDetail(b.dataset.id);
+            else if (b.classList.contains('edit')) location.href = 'log-workout.php?workout_id=' + encodeURIComponent(b.dataset.id);
+            else if (b.classList.contains('del')) deleteWorkout(b.dataset.id);
         });
-
-        document.querySelectorAll('.workout-actions .delete').forEach(btn => {
-            btn.addEventListener('click', () => deleteWorkout(btn.dataset.id, btn.closest('.workout-item')));
-        });
-
-        document.querySelectorAll('.workout-actions .edit-btn').forEach(btn => {
-            btn.addEventListener('click', () => window.location.href = 'log-workout.php?workout_id=' + encodeURIComponent(btn.dataset.id));
-        });
-
-        const modalEditBtn = document.getElementById('modalEditBtn');
-        if (modalEditBtn) {
-            modalEditBtn.addEventListener('click', () => {
-                if (activeWorkoutId) {
-                    window.location.href = 'log-workout.php?workout_id=' + encodeURIComponent(activeWorkoutId);
-                }
-            });
-        }
-
-        document.getElementById('modalDeleteBtn').addEventListener('click', () => {
-            if (activeWorkoutId) deleteWorkout(activeWorkoutId, null);
-        });
+        $('dlgEdit').addEventListener('click', () => { if (activeId) location.href = 'log-workout.php?workout_id=' + encodeURIComponent(activeId); });
+        $('dlgDelete').addEventListener('click', () => { if (activeId) deleteWorkout(activeId); });
     </script>
 </body>
+
 </html>
