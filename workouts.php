@@ -714,7 +714,8 @@ function gt_e($s)
                         aria-label="Week <?php echo gt_e($weekData['week']); ?>">
                         <div class="wh">
                             <h2>Week <?php echo gt_e($weekData['week']); ?>, <?php echo gt_e($startDate->format('M j')); ?> to
-                                <?php echo gt_e($endDate->format('M j, Y')); ?></h2>
+                                <?php echo gt_e($endDate->format('M j, Y')); ?>
+                            </h2>
                             <span class="wsum" data-total="<?php echo $n; ?>"><?php echo $n; ?>
                                 session<?php echo $n === 1 ? '' : 's'; ?><?php echo $mins ? ', ' . $mins . ' min' : ''; ?></span>
                         </div>
