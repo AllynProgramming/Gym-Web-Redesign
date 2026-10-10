@@ -893,7 +893,7 @@ sort($exerciseSuggestions, SORT_NATURAL | SORT_FLAG_CASE);
                 const data = JSON.parse(saved);
                 if (!data.exercises || !data.exercises.length) return false;
                 populate(data);
-                showMsg('Restored your unsaved draft.', 'ok');
+                showMsg('Restored your unsaved draft. Check the date before saving.', 'ok');
                 return true;
             } catch (e) { return false; }
         }
@@ -907,7 +907,11 @@ sort($exerciseSuggestions, SORT_NATURAL | SORT_FLAG_CASE);
                 const data = await res.json();
                 if (data.success) {
                     populate(data);
-                    showMsg('Last workout copied. Adjust the weights and save.', 'ok');
+                    // A copy is a NEW session: date it today and clear the old session's times
+                    $('session_date').value = today();
+                    $('start_time').value = ''; $('end_time').value = ''; $('duration_minutes').value = '';
+                    updateSummary();
+                    showMsg('Last workout copied and dated today. Adjust the weights and save.', 'ok');
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                 } else {
                     showMsg(data.error || 'No earlier workout to copy yet.', 'err');
