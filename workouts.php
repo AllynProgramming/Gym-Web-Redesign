@@ -622,6 +622,24 @@ function gt_e($s)
                 flex: 1
             }
         }
+
+        nav a[aria-current="page"] {
+            text-decoration: underline;
+            text-decoration-thickness: 2px;
+            text-underline-offset: 6px
+        }
+
+        nav .who {
+            color: var(--muted);
+            font-weight: 500
+        }
+
+        @media (max-width:560px) {
+            header nav {
+                gap: .1rem 1rem;
+                font-size: .9rem
+            }
+        }
     </style>
 </head>
 
@@ -629,14 +647,8 @@ function gt_e($s)
     <div class="wrap">
         <header>
             <a class="logo" href="dashboard.php">GymTrack</a>
-            <nav aria-label="Main">
-                <a href="dashboard.php">Dashboard</a>
-                <a href="log-workout.php">Log workout</a>
-                <a href="nutrition.php">Nutrition</a>
-                <a href="profile.php">Profile</a>
-                <a href="friends.php">Friends</a>
-                <a href="api/logout.php">Log out</a>
-            </nav>
+            <?php $activePage = 'workouts';
+            include __DIR__ . '/api/includes/nav.php'; ?>
         </header>
 
         <main>
