@@ -33,6 +33,7 @@ $defaultExercise = $exerciseList[0]['exercise_name'] ?? '';
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <script src="assets/theme.js"></script>
+    <script src="assets/units.js"></script>
     <title>Progression | GymTrack</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -164,7 +165,7 @@ $defaultExercise = $exerciseList[0]['exercise_name'] ?? '';
 
         .controls {
             display: grid;
-            grid-template-columns: 1.4fr 1fr 1fr;
+            grid-template-columns: 1.4fr 1fr 1fr auto;
             gap: 1rem;
             padding: 1rem 0 1.6rem
         }
@@ -175,7 +176,8 @@ $defaultExercise = $exerciseList[0]['exercise_name'] ?? '';
             align-content: start
         }
 
-        label {
+        label,
+        .lbl {
             font: 700 .85rem var(--head)
         }
 
@@ -401,6 +403,10 @@ $defaultExercise = $exerciseList[0]['exercise_name'] ?? '';
                             <option value="">Nothing</option>
                         </select>
                     </div>
+                    <div class="field">
+                        <span class="lbl">Weight unit</span>
+                        <div id="unitSwitch"></div>
+                    </div>
                 </div>
 
                 <dl class="figs" aria-live="polite">
@@ -446,6 +452,11 @@ $defaultExercise = $exerciseList[0]['exercise_name'] ?? '';
             const $ = id => document.getElementById(id);
             const exerciseSelect = $('exerciseSelect'), primarySel = $('primaryWeekSelect'), compareSel = $('compareWeekSelect');
             const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            // The database stores kg; these show it in the unit chosen with the kg / lb switch
+            const U = GT.units;
+            const unit = () => U.get();
+            const disp = v => U.round(U.fromKg(v));
+            const fmtW = v => U.fmt(v);
             let chartInstance = null, current = null;
 
             function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -455,12 +466,13 @@ $defaultExercise = $exerciseList[0]['exercise_name'] ?? '';
             function dayIndex(iso) { return (parseDate(iso).getDay() + 6) % 7; } // Mon = 0
 
             function renderSummary(s) {
-                $('statBest').textContent = s.best + ' kg';
-                $('statLatest').textContent = s.latest + ' kg';
+                const u = unit();
+                $('statBest').textContent = fmtW(s.best) + ' ' + u;
+                $('statLatest').textContent = fmtW(s.latest) + ' ' + u;
                 $('statSessions').textContent = s.sessions;
-                const d = $('statDelta'), v = Number(s.delta);
-                d.textContent = (v > 0 ? '+' : '') + s.delta + ' kg';
-                d.className = v > 0 ? 'up' : (v < 0 ? 'down' : '');
+                const d = $('statDelta'), shown = disp(Number(s.delta));
+                d.textContent = (shown > 0 ? '+' : '') + fmtW(s.delta) + ' ' + u;
+                d.className = shown > 0 ? 'up' : (shown < 0 ? 'down' : '');
             }
 
             function buildOptions(weeks) {
@@ -492,17 +504,17 @@ $defaultExercise = $exerciseList[0]['exercise_name'] ?? '';
                 if (!week) {
                     const sorted = rows.slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
                     labels = sorted.map(r => fmtDate(r.date));
-                    sets = [dataset('All sessions', sorted.map(r => Number(r.avg_weight)), cssVar('--accent'), false)];
+                    sets = [dataset('All sessions', sorted.map(r => disp(r.avg_weight)), cssVar('--accent'), false)];
                 } else {
                     labels = DAYS;
-                    const byDay = key => { const out = Array(7).fill(null); rows.filter(r => r.weekKey === key).forEach(r => { out[dayIndex(r.date)] = Number(r.avg_weight); }); return out; };
+                    const byDay = key => { const out = Array(7).fill(null); rows.filter(r => r.weekKey === key).forEach(r => { out[dayIndex(r.date)] = disp(r.avg_weight); }); return out; };
                     sets = [dataset(weekLabel(week), byDay(week), cssVar('--accent'), false)];
                     if (cmp && cmp !== week) sets.push(dataset(weekLabel(cmp), byDay(cmp), cssVar('--red'), true));
                 }
 
                 const vals = sets.flatMap(s => s.data).filter(v => v !== null);
-                $('progressionChart').setAttribute('aria-label', 'Average weight per session for ' + current.exercise + (vals.length ? ', from ' + vals[0] + ' to ' + vals[vals.length - 1] + ' kg' : ''));
-                $('chartTitle').textContent = 'Average weight per session (kg)' + (week ? ', by day of the week' : '');
+                $('progressionChart').setAttribute('aria-label', 'Average weight per session for ' + current.exercise + (vals.length ? ', from ' + vals[0] + ' to ' + vals[vals.length - 1] + ' ' + unit() : ''));
+                $('chartTitle').textContent = 'Average weight per session (' + unit() + ')' + (week ? ', by day of the week' : '');
 
                 const muted = cssVar('--muted'), rule = cssVar('--rule'), ink = cssVar('--ink');
                 if (chartInstance) chartInstance.destroy();
@@ -514,11 +526,11 @@ $defaultExercise = $exerciseList[0]['exercise_name'] ?? '';
                         interaction: { mode: 'index', intersect: false },
                         plugins: {
                             legend: { display: sets.length > 1, labels: { color: ink, usePointStyle: true, padding: 16, font: { family: 'Archivo, Arial, sans-serif', weight: '600' } } },
-                            tooltip: { callbacks: { label: c => c.dataset.label + ': ' + c.formattedValue + ' kg' } }
+                            tooltip: { callbacks: { label: c => c.dataset.label + ': ' + c.formattedValue + ' ' + unit() } }
                         },
                         scales: {
                             x: { grid: { color: rule }, ticks: { color: muted, font: { family: 'Archivo, Arial, sans-serif' } } },
-                            y: { grid: { color: rule }, beginAtZero: false, ticks: { color: muted, padding: 8, font: { family: 'Archivo, Arial, sans-serif' } }, title: { display: true, text: 'kg', color: muted } }
+                            y: { grid: { color: rule }, beginAtZero: false, ticks: { color: muted, padding: 8, font: { family: 'Archivo, Arial, sans-serif' } }, title: { display: true, text: unit(), color: muted } }
                         }
                     }
                 });
@@ -526,11 +538,11 @@ $defaultExercise = $exerciseList[0]['exercise_name'] ?? '';
 
             function renderEntries(entries) {
                 if (!entries || !entries.length) { $('entryList').innerHTML = '<p class="status">No sessions logged for this exercise yet.</p>'; return; }
-                $('entryList').innerHTML = '<div class="scroll"><table><thead><tr><th>Date</th><th>Plan</th><th class="n">Weight</th><th class="n">Reps</th><th>Notes</th></tr></thead><tbody>'
+                $('entryList').innerHTML = '<div class="scroll"><table><thead><tr><th>Date</th><th>Plan</th><th class="n">Weight (' + unit() + ')</th><th class="n">Reps</th><th>Notes</th></tr></thead><tbody>'
                     + entries.map(e => '<tr class="' + (e.is_warmup ? 'wu' : '') + '">'
                         + '<td>' + esc(fmtDate(e.date)) + (e.is_warmup ? '<span class="tag">Warm-up</span>' : '') + '</td>'
                         + '<td>' + esc(e.plan_name || 'No plan') + '</td>'
-                        + '<td class="n">' + esc(e.weight) + ' kg</td>'
+                        + '<td class="n">' + esc(fmtW(e.weight)) + ' ' + unit() + '</td>'
                         + '<td class="n">' + esc(e.reps) + '</td>'
                         + '<td class="note">' + esc(e.notes) + '</td></tr>').join('')
                     + '</tbody></table></div>';
@@ -558,6 +570,8 @@ $defaultExercise = $exerciseList[0]['exercise_name'] ?? '';
                 renderChart();
             });
             compareSel.addEventListener('change', renderChart);
+            U.control($('unitSwitch'));
+            document.addEventListener('unitchange', () => { if (current) { renderSummary(current.summary); renderChart(); renderEntries(current.entries); } });
             window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', renderChart);
             document.addEventListener('themechange', renderChart);
 
