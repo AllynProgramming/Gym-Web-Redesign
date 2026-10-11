@@ -554,385 +554,389 @@ function gt_e($s)
         .prev div {
             font: 600 .8rem var(--head);
             color: var(--muted)
-        }
-
-        .prev b {
-            display: block;
-            font: 800 1.3rem var(--head);
-            color: var(--ink);
-            font-variant-numeric: tabular-nums
-        }
-
-        .sp {
-            margin-top: 1rem
-        }
-
-        footer {
-            padding: 1rem 0 3rem
-        }
-
-        @media (max-width:640px) {
-            .grid {
-                grid-template-columns: 1fr 1fr
-            }
-
-            .grid3 {
-                grid-template-columns: 1fr
-            }
-
-            .mac {
-                grid-template-columns: 1fr auto;
-                gap: .3rem 1rem
-            }
-
-            .mac .track {
-                grid-column: 1/-1;
-                order: 3
-            }
-
-            .meal li {
-                grid-template-columns: 1fr auto 2.2rem;
-                gap: .5rem
-            }
-        }
-
-        nav a[aria-current="page"] {
-            text-decoration: underline;
-            text-decoration-thickness: 2px;
-            text-underline-offset: 6px
-        }
-
-        nav .who {
-            color: var(--muted);
-            font-weight: 500
-        }
-
-        @media (max-width:560px) {
-            header nav {
-                gap: .1rem 1rem;
-                font-size: .9rem
-            }
-        }
-    </style>
+        }.prev b{display:block;font:800 1.3rem var(--head);color:var(--ink);font-variant-numeric:tabular-nums}
+.sp{margin-top:1rem}
+footer{padding:1rem 0 3rem}
+@media (max-width:640px){.grid{grid-template-columns:1fr 1fr}.grid3{grid-template-columns:1fr}.mac{grid-template-columns:1fr auto;gap:.3rem 1rem}.mac .track{grid-column:1/-1;order:3}.meal li{grid-template-columns:1fr auto 2.2rem;gap:.5rem}}
+nav a[aria-current="page"]{text-decoration:underline;text-decoration-thickness:2px;text-underline-offset:6px}
+nav .who{color:var(--muted);font-weight:500}
+@media (max-width:560px){header nav{gap:.1rem 1rem;font-size:.9rem}}
+.seg{display:flex;border:2px solid var(--ink);border-radius:6px;overflow:hidden}
+.seg button{flex:1;font:700 .95rem var(--head);padding:.5rem .8rem;min-height:2.6rem;background:transparent;color:var(--ink);border:0;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.seg button:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.basis{border:0;padding:0;margin:1rem 0 0}
+.basis legend{font:700 .85rem var(--head);padding:0 0 .3rem}
+.rad{display:flex;align-items:center;gap:.55rem;font:600 1rem var(--head);margin:.25rem 0;cursor:pointer}
+input[type=radio]{width:1.2rem;height:1.2rem;min-height:0;padding:0;accent-color:var(--accent)}
+.linkbtn{background:none;border:0;padding:0;color:inherit;font:inherit;text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+[hidden]{display:none!important}
+</style>
 </head>
-
 <body>
-    <div class="wrap">
-        <header>
-            <a class="logo" href="dashboard.php">GymTrack</a>
-            <?php $activePage = 'nutrition';
-            include __DIR__ . '/api/includes/nav.php'; ?>
-        </header>
+<div class="wrap">
+<header>
+  <a class="logo" href="dashboard.php">GymTrack</a>
+  <?php $activePage = 'nutrition';
+  include __DIR__ . '/api/includes/nav.php'; ?>
+</header>
 
-        <main>
-            <div class="top">
-                <h1><?php echo gt_e(date('l, M j', strtotime($logDate))); ?></h1>
-                <div class="days">
-                    <a href="nutrition.php?date=<?php echo gt_e($prevDate); ?>">Previous day</a>
-                    <?php if (!$isToday): ?><a href="nutrition.php">Back to today</a><?php endif; ?>
-                    <a href="nutrition.php?date=<?php echo gt_e($nextDate); ?>">Next day</a>
-                </div>
-                <div class="msg" id="pageMessage" role="status" aria-live="polite" hidden></div>
-            </div>
+<main>
+<div class="top">
+  <h1><?php echo gt_e(date('l, M j', strtotime($logDate))); ?></h1>
+  <div class="days">
+    <a href="nutrition.php?date=<?php echo gt_e($prevDate); ?>">Previous day</a>
+    <?php if (!$isToday): ?><a href="nutrition.php">Back to today</a><?php endif; ?>
+    <a href="nutrition.php?date=<?php echo gt_e($nextDate); ?>">Next day</a>
+  </div>
+  <div class="msg" id="pageMessage" role="status" aria-live="polite" hidden></div>
+</div>
 
-            <section class="sec" style="margin-top:.6rem">
-                <h2><?php echo $isToday ? 'Today so far' : 'Totals for this day'; ?></h2>
-                <?php foreach ($goalRows as $key => $meta):
-                    $v = round($totals[$key]);
-                    $g = (float) $goals[$key];
-                    $diff = round($g - $v); ?>
-                    <div class="mac">
-                        <span><?php echo gt_e($meta['label']); ?></span>
-                        <div class="track" role="img"
-                            aria-label="<?php echo gt_e($meta['label'] . ': ' . $v . ' of ' . $g . $meta['unit']); ?>"><i
-                                style="--c:<?php echo $meta['color']; ?>;width:<?php echo pct($totals[$key], $goals[$key]); ?>%"></i>
-                        </div>
-                        <em><b><?php echo number_format($v); ?></b> of
-                            <?php echo number_format($g) . gt_e($meta['unit']); ?>,
-                            <?php echo $diff >= 0 ? number_format($diff) . ' left' : number_format(-$diff) . ' over'; ?></em>
-                    </div>
+<section class="sec" style="margin-top:.6rem">
+  <h2><?php echo $isToday ? 'Today so far' : 'Totals for this day'; ?></h2>
+  <?php foreach ($goalRows as $key => $meta):
+      $v = round($totals[$key]);
+      $g = (float) $goals[$key];
+      $diff = round($g - $v); ?>
+        <div class="mac">
+          <span><?php echo gt_e($meta['label']); ?></span>
+          <div class="track" role="img" aria-label="<?php echo gt_e($meta['label'] . ': ' . $v . ' of ' . $g . $meta['unit']); ?>"><i style="--c:<?php echo $meta['color']; ?>;width:<?php echo pct($totals[$key], $goals[$key]); ?>%"></i></div>
+          <em><b><?php echo number_format($v); ?></b> of <?php echo number_format($g) . gt_e($meta['unit']); ?>, <?php echo $diff >= 0 ? number_format($diff) . ' left' : number_format(-$diff) . ' over'; ?></em>
+        </div>
+  <?php endforeach; ?>
+</section>
+
+<?php foreach ($mealLabels as $mealKey => $mealLabel): ?>
+      <section class="meal">
+        <div class="mh">
+          <h2><?php echo gt_e($mealLabel); ?></h2>
+          <span><?php echo number_format(round(array_sum(array_column($meals[$mealKey], 'calories')))); ?> kcal</span>
+        </div>
+        <?php if (empty($meals[$mealKey])): ?>
+              <p class="empty">Nothing logged yet.</p>
+        <?php else: ?>
+              <ul>
+                <?php foreach ($meals[$mealKey] as $entry): ?>
+                      <li>
+                        <div class="n"><?php echo gt_e($entry['food_name']); ?><small><?php echo gt_e($entry['grams']); ?> g</small></div>
+                        <div class="m"><b><?php echo round($entry['calories']); ?> kcal</b>P <?php echo round($entry['protein']); ?> g, C <?php echo round($entry['carbs']); ?> g, F <?php echo round($entry['fat']); ?> g</div>
+                        <button type="button" class="x remove-entry" data-log-id="<?php echo (int) $entry['id']; ?>" aria-label="Remove <?php echo gt_e($entry['food_name']); ?>">&times;</button>
+                      </li>
                 <?php endforeach; ?>
-            </section>
+              </ul>
+        <?php endif; ?>
+        <button type="button" class="addfood" data-meal="<?php echo gt_e($mealKey); ?>">Add food to <?php echo gt_e(strtolower($mealLabel)); ?></button>
+      </section>
+<?php endforeach; ?>
 
-            <?php foreach ($mealLabels as $mealKey => $mealLabel): ?>
-                <section class="meal">
-                    <div class="mh">
-                        <h2><?php echo gt_e($mealLabel); ?></h2>
-                        <span><?php echo number_format(round(array_sum(array_column($meals[$mealKey], 'calories')))); ?>
-                            kcal</span>
-                    </div>
-                    <?php if (empty($meals[$mealKey])): ?>
-                        <p class="empty">Nothing logged yet.</p>
-                    <?php else: ?>
-                        <ul>
-                            <?php foreach ($meals[$mealKey] as $entry): ?>
-                                <li>
-                                    <div class="n">
-                                        <?php echo gt_e($entry['food_name']); ?><small><?php echo gt_e($entry['grams']); ?>
-                                            g</small></div>
-                                    <div class="m"><b><?php echo round($entry['calories']); ?> kcal</b>P
-                                        <?php echo round($entry['protein']); ?> g, C <?php echo round($entry['carbs']); ?> g, F
-                                        <?php echo round($entry['fat']); ?> g</div>
-                                    <button type="button" class="x remove-entry" data-log-id="<?php echo (int) $entry['id']; ?>"
-                                        aria-label="Remove <?php echo gt_e($entry['food_name']); ?>">&times;</button>
-                                </li>
-                            <?php endforeach; ?>
-                        </ul>
-                    <?php endif; ?>
-                    <button type="button" class="addfood" data-meal="<?php echo gt_e($mealKey); ?>">Add food to
-                        <?php echo gt_e(strtolower($mealLabel)); ?></button>
-                </section>
-            <?php endforeach; ?>
+<section class="sec">
+  <details id="goalsBox">
+    <summary>Daily goals</summary>
+    <div class="in">
+      <form id="goalsForm">
+        <div class="grid">
+          <div class="field"><label for="goal_calories">Calories</label><input type="number" id="goal_calories" value="<?php echo gt_e($goals['calories']); ?>" min="0"></div>
+          <div class="field"><label for="goal_protein">Protein (g)</label><input type="number" id="goal_protein" value="<?php echo gt_e($goals['protein']); ?>" min="0"></div>
+          <div class="field"><label for="goal_carbs">Carbs (g)</label><input type="number" id="goal_carbs" value="<?php echo gt_e($goals['carbs']); ?>" min="0"></div>
+          <div class="field"><label for="goal_fat">Fat (g)</label><input type="number" id="goal_fat" value="<?php echo gt_e($goals['fat']); ?>" min="0"></div>
+        </div>
+        <button type="submit" class="btn" id="saveGoalsBtn">Save goals</button>
+      </form>
+    </div>
+  </details>
 
-            <section class="sec">
-                <details id="goalsBox">
-                    <summary>Daily goals</summary>
-                    <div class="in">
-                        <form id="goalsForm">
-                            <div class="grid">
-                                <div class="field"><label for="goal_calories">Calories</label><input type="number"
-                                        id="goal_calories" value="<?php echo gt_e($goals['calories']); ?>" min="0">
-                                </div>
-                                <div class="field"><label for="goal_protein">Protein (g)</label><input type="number"
-                                        id="goal_protein" value="<?php echo gt_e($goals['protein']); ?>" min="0"></div>
-                                <div class="field"><label for="goal_carbs">Carbs (g)</label><input type="number"
-                                        id="goal_carbs" value="<?php echo gt_e($goals['carbs']); ?>" min="0"></div>
-                                <div class="field"><label for="goal_fat">Fat (g)</label><input type="number"
-                                        id="goal_fat" value="<?php echo gt_e($goals['fat']); ?>" min="0"></div>
-                            </div>
-                            <button type="submit" class="btn" id="saveGoalsBtn">Save goals</button>
-                        </form>
-                    </div>
-                </details>
+  <details id="bodyBox">
+    <summary>Work out targets from your body</summary>
+    <div class="in">
+      <p class="hint">Fill this in once and your daily targets are estimated for you (Mifflin-St Jeor formula). These are general estimates, not medical advice. Change the goals above if you know better numbers for you.</p>
+      <div class="msg" id="bodyProfileMessage" role="status" aria-live="polite" hidden></div>
+      <form id="bodyProfileForm" class="sp">
+        <div class="grid3">
+          <div class="field"><label for="bp_height">Height (cm)</label><input type="number" id="bp_height" min="100" max="250" value="<?php echo gt_e($goals['height_cm'] ?? ''); ?>" placeholder="175"></div>
+          <div class="field"><label for="bp_weight">Weight (kg)</label><input type="number" id="bp_weight" min="30" max="300" step="0.1" value="<?php echo gt_e($goals['weight_kg'] ?? ''); ?>" placeholder="75"></div>
+          <div class="field"><label for="bp_age">Age</label><input type="number" id="bp_age" min="13" max="100" value="<?php echo gt_e($goals['age'] ?? ''); ?>" placeholder="25"></div>
+        </div>
+        <div class="grid3">
+          <div class="field"><label for="bp_sex">Sex</label>
+            <select id="bp_sex">
+              <option value="">Select</option>
+              <option value="male" <?php echo ($goals['sex'] ?? '') === 'male' ? 'selected' : ''; ?>>Male</option>
+              <option value="female" <?php echo ($goals['sex'] ?? '') === 'female' ? 'selected' : ''; ?>>Female</option>
+            </select></div>
+          <div class="field"><label for="bp_activity">Activity level</label>
+            <select id="bp_activity">
+              <?php foreach ($activityOptions as $val => $label): ?>
+                    <option value="<?php echo gt_e($val); ?>" <?php echo $currentActivity === $val ? 'selected' : ''; ?>><?php echo gt_e($label); ?></option>
+              <?php endforeach; ?>
+            </select></div>
+          <div class="field"><label for="bp_goal">Goal</label>
+            <select id="bp_goal">
+              <option value="cut" <?php echo $currentGoal === 'cut' ? 'selected' : ''; ?>>Lose fat</option>
+              <option value="maintain" <?php echo $currentGoal === 'maintain' ? 'selected' : ''; ?>>Maintain</option>
+              <option value="bulk" <?php echo $currentGoal === 'bulk' ? 'selected' : ''; ?>>Gain muscle</option>
+            </select></div>
+        </div>
+        <div class="field" style="max-width:14rem;margin-bottom:1rem"><label for="bp_target_weight">Target weight (kg, optional)</label><input type="number" id="bp_target_weight" min="30" max="300" step="0.1" value="<?php echo gt_e($goals['target_weight_kg'] ?? ''); ?>" placeholder="80"></div>
+        <button type="submit" class="btn" id="calculateGoalsBtn">Calculate my targets</button>
+      </form>
+    </div>
+  </details>
+</section>
+</main>
+<footer></footer>
+</div>
 
-                <details id="bodyBox">
-                    <summary>Work out targets from your body</summary>
-                    <div class="in">
-                        <p class="hint">Fill this in once and your daily targets are estimated for you (Mifflin-St Jeor
-                            formula). These are general estimates, not medical advice. Change the goals above if you
-                            know better numbers for you.</p>
-                        <div class="msg" id="bodyProfileMessage" role="status" aria-live="polite" hidden></div>
-                        <form id="bodyProfileForm" class="sp">
-                            <div class="grid3">
-                                <div class="field"><label for="bp_height">Height (cm)</label><input type="number"
-                                        id="bp_height" min="100" max="250"
-                                        value="<?php echo gt_e($goals['height_cm'] ?? ''); ?>" placeholder="175"></div>
-                                <div class="field"><label for="bp_weight">Weight (kg)</label><input type="number"
-                                        id="bp_weight" min="30" max="300" step="0.1"
-                                        value="<?php echo gt_e($goals['weight_kg'] ?? ''); ?>" placeholder="75"></div>
-                                <div class="field"><label for="bp_age">Age</label><input type="number" id="bp_age"
-                                        min="13" max="100" value="<?php echo gt_e($goals['age'] ?? ''); ?>"
-                                        placeholder="25"></div>
-                            </div>
-                            <div class="grid3">
-                                <div class="field"><label for="bp_sex">Sex</label>
-                                    <select id="bp_sex">
-                                        <option value="">Select</option>
-                                        <option value="male" <?php echo ($goals['sex'] ?? '') === 'male' ? 'selected' : ''; ?>>Male</option>
-                                        <option value="female" <?php echo ($goals['sex'] ?? '') === 'female' ? 'selected' : ''; ?>>Female</option>
-                                    </select>
-                                </div>
-                                <div class="field"><label for="bp_activity">Activity level</label>
-                                    <select id="bp_activity">
-                                        <?php foreach ($activityOptions as $val => $label): ?>
-                                            <option value="<?php echo gt_e($val); ?>" <?php echo $currentActivity === $val ? 'selected' : ''; ?>><?php echo gt_e($label); ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-                                <div class="field"><label for="bp_goal">Goal</label>
-                                    <select id="bp_goal">
-                                        <option value="cut" <?php echo $currentGoal === 'cut' ? 'selected' : ''; ?>>Lose
-                                            fat</option>
-                                        <option value="maintain" <?php echo $currentGoal === 'maintain' ? 'selected' : ''; ?>>Maintain</option>
-                                        <option value="bulk" <?php echo $currentGoal === 'bulk' ? 'selected' : ''; ?>>Gain
-                                            muscle</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="field" style="max-width:14rem;margin-bottom:1rem"><label
-                                    for="bp_target_weight">Target weight (kg, optional)</label><input type="number"
-                                    id="bp_target_weight" min="30" max="300" step="0.1"
-                                    value="<?php echo gt_e($goals['target_weight_kg'] ?? ''); ?>" placeholder="80">
-                            </div>
-                            <button type="submit" class="btn" id="calculateGoalsBtn">Calculate my targets</button>
-                        </form>
-                    </div>
-                </details>
-            </section>
-        </main>
-        <footer></footer>
+<dialog id="addFoodDialog" aria-labelledby="addFoodTitle">
+  <div class="dh"><h2 id="addFoodTitle">Add food</h2><button type="button" class="x" id="closeAddFood" aria-label="Close">&times;</button></div>
+  <div class="msg" id="modalMessage" role="alert" hidden></div>
+  <form id="addFoodForm" novalidate>
+    <input type="hidden" id="addFoodMeal" value="">
+    <div class="seg" role="group" aria-label="How to add the food">
+      <button type="button" data-mode="search" aria-pressed="true">Search foods</button>
+      <button type="button" data-mode="label" aria-pressed="false">New from a label</button>
     </div>
 
-    <dialog id="addFoodDialog" aria-labelledby="addFoodTitle">
-        <div class="dh">
-            <h2 id="addFoodTitle">Add food</h2><button type="button" class="x" id="closeAddFood"
-                aria-label="Close">&times;</button>
+    <div id="modeSearch">
+      <div class="field sp">
+        <label for="foodSelect">Food</label>
+        <input type="text" id="foodSelect" list="foodOptions" placeholder="Start typing, like chicken breast" autocomplete="off">
+        <datalist id="foodOptions">
+          <?php foreach ($allFoods as $f): ?>
+                <option value="<?php echo gt_e($f['name']); ?>">
+          <?php endforeach; ?>
+        </datalist>
+      </div>
+      <div class="field sp">
+        <label for="foodGrams">Amount (grams)</label>
+        <input type="number" id="foodGrams" min="0" step="any" inputmode="decimal" value="100">
+      </div>
+      <div class="prev" aria-live="polite">
+        <div><b id="prevCal">-</b>kcal</div><div><b id="prevProtein">-</b>protein</div><div><b id="prevCarbs">-</b>carbs</div><div><b id="prevFat">-</b>fat</div>
+      </div>
+      <p class="hint">Not in the list? <button type="button" class="linkbtn" id="goLabel">Add it from its nutrition label</button></p>
+    </div>
+
+    <div id="modeLabel" hidden>
+      <p class="hint sp" style="margin-bottom:0">Copy the numbers from the food's nutrition label, like a 7-Eleven meal. The food is saved, so you can find it by name next time.</p>
+      <div class="field sp">
+        <label for="lblName">Food name</label>
+        <input type="text" id="lblName" maxlength="150" placeholder="7-Eleven chicken rice (1 pack)" autocomplete="off">
+      </div>
+      <fieldset class="basis">
+        <legend>The label's numbers are for</legend>
+        <label class="rad"><input type="radio" name="lblBasis" value="serving" checked> One serving or pack</label>
+        <label class="rad"><input type="radio" name="lblBasis" value="100g"> 100 g</label>
+      </fieldset>
+      <div class="grid2 sp">
+        <div class="field" id="lblServingField">
+          <label for="lblServingG">Serving size (g, optional)</label>
+          <input type="number" id="lblServingG" min="0" step="any" inputmode="decimal">
         </div>
-        <div class="msg" id="modalMessage" role="alert" hidden></div>
-        <form id="addFoodForm">
-            <input type="hidden" id="addFoodMeal" value="">
-            <div class="field sp">
-                <label for="foodSelect">Food</label>
-                <input type="text" id="foodSelect" list="foodOptions" placeholder="Start typing, like chicken breast"
-                    autocomplete="off">
-                <datalist id="foodOptions">
-                    <?php foreach ($allFoods as $f): ?>
-                        <option value="<?php echo gt_e($f['name']); ?>">
-                        <?php endforeach; ?>
-                </datalist>
-            </div>
-            <div class="field sp">
-                <label for="foodGrams">Amount (grams)</label>
-                <input type="number" id="foodGrams" min="0" step="any" inputmode="decimal" value="100">
-            </div>
-            <div class="prev" aria-live="polite">
-                <div><b id="prevCal">-</b>kcal</div>
-                <div><b id="prevProtein">-</b>protein</div>
-                <div><b id="prevCarbs">-</b>carbs</div>
-                <div><b id="prevFat">-</b>fat</div>
-            </div>
-            <details id="customBox" style="border-top:0;padding:0">
-                <summary style="font-size:.95rem">Can't find it? Add a custom food</summary>
-                <div class="in">
-                    <div class="field" style="margin-bottom:1rem"><label for="customName">Food name</label><input
-                            type="text" id="customName" placeholder="Mom's chili"></div>
-                    <div class="grid" style="grid-template-columns:1fr 1fr">
-                        <div class="field"><label for="customCal">Calories per 100 g</label><input type="number"
-                                id="customCal" min="0" step="0.1"></div>
-                        <div class="field"><label for="customProtein">Protein per 100 g</label><input type="number"
-                                id="customProtein" min="0" step="0.1"></div>
-                        <div class="field"><label for="customCarbs">Carbs per 100 g</label><input type="number"
-                                id="customCarbs" min="0" step="0.1"></div>
-                        <div class="field"><label for="customFat">Fat per 100 g</label><input type="number"
-                                id="customFat" min="0" step="0.1"></div>
-                    </div>
-                    <p class="hint">It is saved once, so you can find it by name next time.</p>
-                </div>
-            </details>
-            <button type="submit" class="btn sp" id="saveFoodBtn" style="width:100%">Log food</button>
-        </form>
-    </dialog>
+        <div class="field">
+          <label for="lblQty" id="lblQtyLabel">Servings you ate</label>
+          <input type="number" id="lblQty" min="0" step="any" inputmode="decimal" value="1">
+        </div>
+      </div>
+      <p class="hint" id="lblHint" style="margin-bottom:0"></p>
+      <div class="grid2 sp">
+        <div class="field"><label for="lblCal">Calories (kcal)</label><input type="number" id="lblCal" min="0" step="any" inputmode="decimal"></div>
+        <div class="field"><label for="lblProtein">Protein (g)</label><input type="number" id="lblProtein" min="0" step="any" inputmode="decimal"></div>
+        <div class="field"><label for="lblCarbs">Carbs (g)</label><input type="number" id="lblCarbs" min="0" step="any" inputmode="decimal"></div>
+        <div class="field"><label for="lblFat">Fat (g)</label><input type="number" id="lblFat" min="0" step="any" inputmode="decimal"></div>
+      </div>
+      <div class="prev" aria-live="polite">
+        <div><b id="lpCal">-</b>kcal</div><div><b id="lpProtein">-</b>protein</div><div><b id="lpCarbs">-</b>carbs</div><div><b id="lpFat">-</b>fat</div>
+      </div>
+      <p class="hint" id="lblSaved"></p>
+    </div>
 
-    <script>
-        const $ = id => document.getElementById(id);
-        const FOODS = <?php echo json_encode($allFoods); ?>;
-        const LOG_DATE = <?php echo json_encode($logDate); ?>;
-        const foodByName = {};
-        FOODS.forEach(f => { foodByName[f.name.toLowerCase()] = f; });
+    <button type="submit" class="btn sp" id="saveFoodBtn" style="width:100%">Log food</button>
+  </form>
+</dialog>
 
-        function say(el, text, kind) { el.textContent = text; el.className = 'msg' + (kind === 'err' ? ' err' : ''); el.hidden = false; }
-        function post(url, body) {
-            return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
-                .then(r => r.text())
-                .then(t => { try { return JSON.parse(t); } catch (e) { throw new Error('bad response'); } });
-        }
-        const NET = 'Could not reach the server, or it sent back something unexpected. Nothing was changed.';
+<script>
+const $ = id => document.getElementById(id);
+const FOODS = <?php echo json_encode($allFoods); ?>;
+const LOG_DATE = <?php echo json_encode($logDate); ?>;
+const foodByName = {};
+FOODS.forEach(f => { foodByName[f.name.toLowerCase()] = f; });
 
-        // ---------- Edit goals ----------
-        $('goalsForm').addEventListener('submit', function (e) {
-            e.preventDefault();
-            const btn = $('saveGoalsBtn'); btn.disabled = true;
-            post('api/update-nutrition-goals.php', {
-                calories: $('goal_calories').value, protein: $('goal_protein').value,
-                carbs: $('goal_carbs').value, fat: $('goal_fat').value
-            }).then(d => {
-                if (d.success) { say($('pageMessage'), 'Goals saved.', 'ok'); setTimeout(() => location.reload(), 700); }
-                else { say($('pageMessage'), d.error || 'Could not save goals.', 'err'); btn.disabled = false; window.scrollTo({ top: 0, behavior: 'smooth' }); }
-            }).catch(() => { say($('pageMessage'), NET, 'err'); btn.disabled = false; });
-        });
+function say(el, text, kind) { el.textContent = text; el.className = 'msg' + (kind === 'err' ? ' err' : ''); el.hidden = false; }
+function post(url, body) {
+  return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+    .then(r => r.text())
+    .then(t => { try { return JSON.parse(t); } catch (e) { throw new Error('bad response'); } });
+}
+const NET = 'Could not reach the server, or it sent back something unexpected. Nothing was changed.';
 
-        // ---------- Body profile -> targets ----------
-        $('bodyProfileForm').addEventListener('submit', function (e) {
-            e.preventDefault();
-            const btn = $('calculateGoalsBtn'); btn.disabled = true;
-            post('api/calculate-nutrition-goals.php', {
-                height_cm: $('bp_height').value, weight_kg: $('bp_weight').value, age: $('bp_age').value,
-                sex: $('bp_sex').value, activity_level: $('bp_activity').value, goal_type: $('bp_goal').value,
-                target_weight_kg: $('bp_target_weight').value
-            }).then(d => {
-                if (d.success) {
-                    const t = d.targets;
-                    say($('bodyProfileMessage'), 'Targets set: ' + t.calories + ' kcal, ' + t.protein + ' g protein, ' + t.carbs + ' g carbs, ' + t.fat + ' g fat.', 'ok');
-                    setTimeout(() => location.reload(), 1400);
-                } else { say($('bodyProfileMessage'), d.error || 'Could not calculate targets.', 'err'); btn.disabled = false; }
-            }).catch(() => { say($('bodyProfileMessage'), NET, 'err'); btn.disabled = false; });
-        });
+// ---------- Edit goals ----------
+$('goalsForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  const btn = $('saveGoalsBtn'); btn.disabled = true;
+  post('api/update-nutrition-goals.php', {
+    calories: $('goal_calories').value, protein: $('goal_protein').value,
+    carbs: $('goal_carbs').value, fat: $('goal_fat').value
+  }).then(d => {
+    if (d.success) { say($('pageMessage'), 'Goals saved.', 'ok'); setTimeout(() => location.reload(), 700); }
+    else { say($('pageMessage'), d.error || 'Could not save goals.', 'err'); btn.disabled = false; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  }).catch(() => { say($('pageMessage'), NET, 'err'); btn.disabled = false; });
+});
 
-        // ---------- Add food dialog ----------
-        const dlg = $('addFoodDialog'), foodSelect = $('foodSelect'), foodGrams = $('foodGrams'), modalMsg = $('modalMessage');
-        const mealNames = { breakfast: 'breakfast', lunch: 'lunch', dinner: 'dinner', snack: 'snacks' };
+// ---------- Body profile -> targets ----------
+$('bodyProfileForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  const btn = $('calculateGoalsBtn'); btn.disabled = true;
+  post('api/calculate-nutrition-goals.php', {
+    height_cm: $('bp_height').value, weight_kg: $('bp_weight').value, age: $('bp_age').value,
+    sex: $('bp_sex').value, activity_level: $('bp_activity').value, goal_type: $('bp_goal').value,
+    target_weight_kg: $('bp_target_weight').value
+  }).then(d => {
+    if (d.success) {
+      const t = d.targets;
+      say($('bodyProfileMessage'), 'Targets set: ' + t.calories + ' kcal, ' + t.protein + ' g protein, ' + t.carbs + ' g carbs, ' + t.fat + ' g fat.', 'ok');
+      setTimeout(() => location.reload(), 1400);
+    } else { say($('bodyProfileMessage'), d.error || 'Could not calculate targets.', 'err'); btn.disabled = false; }
+  }).catch(() => { say($('bodyProfileMessage'), NET, 'err'); btn.disabled = false; });
+});
 
-        document.querySelectorAll('.addfood').forEach(btn => btn.addEventListener('click', () => {
-            $('addFoodMeal').value = btn.dataset.meal;
-            $('addFoodTitle').textContent = 'Add food to ' + mealNames[btn.dataset.meal];
-            $('addFoodForm').reset();
-            foodGrams.value = 100;
-            $('customBox').open = false;
-            modalMsg.hidden = true;
-            $('saveFoodBtn').disabled = false;
-            updatePreview();
-            dlg.showModal();
-            foodSelect.focus();
-        }));
-        $('closeAddFood').addEventListener('click', () => dlg.close());
-        dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+// ---------- Add food dialog ----------
+const dlg = $('addFoodDialog'), foodSelect = $('foodSelect'), foodGrams = $('foodGrams'), modalMsg = $('modalMessage');
+const mealNames = { breakfast: 'breakfast', lunch: 'lunch', dinner: 'dinner', snack: 'snacks' };
+let mode = 'search';
 
-        function updatePreview() {
-            const food = foodByName[foodSelect.value.trim().toLowerCase()];
-            const g = parseFloat(foodGrams.value) || 0;
-            if (!food) { ['prevCal', 'prevProtein', 'prevCarbs', 'prevFat'].forEach(id => $(id).textContent = '-'); return; }
-            const k = g / 100;
-            $('prevCal').textContent = Math.round(food.calories_per_100g * k);
-            $('prevProtein').textContent = Math.round(food.protein_per_100g * k) + ' g';
-            $('prevCarbs').textContent = Math.round(food.carbs_per_100g * k) + ' g';
-            $('prevFat').textContent = Math.round(food.fat_per_100g * k) + ' g';
-        }
-        foodSelect.addEventListener('input', updatePreview);
-        foodGrams.addEventListener('input', updatePreview);
-        $('customBox').addEventListener('toggle', function () {
-            if (this.open && !$('customName').value) $('customName').value = foodSelect.value.trim();
-        });
+function setMode(m) {
+  mode = m;
+  $('modeSearch').hidden = m !== 'search';
+  $('modeLabel').hidden = m !== 'label';
+  document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === m ? 'true' : 'false'));
+  modalMsg.hidden = true;
+  (m === 'label' ? $('lblName') : foodSelect).focus();
+}
+document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+$('goLabel').addEventListener('click', () => { $('lblName').value = foodSelect.value.trim(); setMode('label'); refreshLabel(); });
 
-        $('addFoodForm').addEventListener('submit', function (e) {
-            e.preventDefault();
-            const grams = parseFloat(foodGrams.value);
-            if (!grams || grams <= 0) { say(modalMsg, 'Enter an amount in grams greater than zero.', 'err'); return; }
+document.querySelectorAll('.addfood').forEach(btn => btn.addEventListener('click', () => {
+  $('addFoodMeal').value = btn.dataset.meal;
+  $('addFoodTitle').textContent = 'Add food to ' + mealNames[btn.dataset.meal];
+  $('addFoodForm').reset();
+  foodGrams.value = 100; $('lblQty').value = 1;
+  modalMsg.hidden = true;
+  $('saveFoodBtn').disabled = false;
+  dlg.showModal();
+  setMode('search');
+  updatePreview();
+  refreshLabel();
+}));
+$('closeAddFood').addEventListener('click', () => dlg.close());
+dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 
-            const existing = foodByName[foodSelect.value.trim().toLowerCase()];
-            const payload = { meal: $('addFoodMeal').value, grams: grams, log_date: LOG_DATE };
+// ----- Search mode: preview for a food that already exists -----
+function updatePreview() {
+  const food = foodByName[foodSelect.value.trim().toLowerCase()];
+  const g = parseFloat(foodGrams.value) || 0;
+  if (!food) { ['prevCal', 'prevProtein', 'prevCarbs', 'prevFat'].forEach(id => $(id).textContent = '-'); return; }
+  const k = g / 100;
+  $('prevCal').textContent = Math.round(food.calories_per_100g * k);
+  $('prevProtein').textContent = Math.round(food.protein_per_100g * k) + ' g';
+  $('prevCarbs').textContent = Math.round(food.carbs_per_100g * k) + ' g';
+  $('prevFat').textContent = Math.round(food.fat_per_100g * k) + ' g';
+}
+foodSelect.addEventListener('input', updatePreview);
+foodGrams.addEventListener('input', updatePreview);
 
-            if (existing) {
-                payload.food_id = existing.id;
-            } else if ($('customBox').open) {
-                const name = $('customName').value.trim();
-                if (!name) { say(modalMsg, 'Enter a name for the custom food.', 'err'); return; }
-                payload.new_food = {
-                    name: name,
-                    calories_per_100g: $('customCal').value || 0, protein_per_100g: $('customProtein').value || 0,
-                    carbs_per_100g: $('customCarbs').value || 0, fat_per_100g: $('customFat').value || 0
-                };
-            } else {
-                say(modalMsg, 'Pick a food from the list, or add it as a custom food.', 'err');
-                return;
-            }
+// ----- Label mode: turn the numbers printed on a label into what gets saved and logged -----
+// Foods are stored per 100 g and each log entry stores grams, so a label "per serving" is converted:
+//   per 100 g = label value x 100 / serving grams      grams logged = serving grams x servings eaten
+// With no serving size entered, one serving is treated as a 100 g portion.
+const basisVal = () => document.querySelector('input[name="lblBasis"]:checked').value;
+const nv = id => parseFloat($(id).value);
+const z = v => (isNaN(v) ? 0 : v);
+const round1 = n => Math.round(n * 10) / 10;
+const round2 = n => Math.round(n * 100) / 100;
+const cleanName = s => s.replace(/[\u2018\u2019]/g, "'").replace(/[\u201C\u201D]/g, '"').replace(/[\u2010-\u2015]/g, '-').replace(/\u2026/g, '...')
+  .replace(/[^\u0000-\u00FF]/g, '').replace(/\s+/g, ' ').trim(); // the foods table is latin1, so emoji and fancy symbols are dropped
 
-            const btn = $('saveFoodBtn'); btn.disabled = true;
-            post('api/log-food.php', payload).then(d => {
-                if (d.success) location.reload();
-                else { say(modalMsg, d.error || 'Could not log that food.', 'err'); btn.disabled = false; }
-            }).catch(() => { say(modalMsg, NET, 'err'); btn.disabled = false; });
-        });
+function labelCalc() {
+  const basis = basisVal(), qty = nv('lblQty');
+  const v = { cal: nv('lblCal'), p: nv('lblProtein'), c: nv('lblCarbs'), f: nv('lblFat') };
+  let S = 100, grams, logK, per100K;
+  if (basis === 'serving') {
+    const sg = nv('lblServingG');
+    S = sg > 0 ? sg : 100;
+    grams = S * qty; logK = qty; per100K = 100 / S;
+  } else {
+    grams = qty; logK = qty / 100; per100K = 1;
+  }
+  const mk = k => ({ cal: z(v.cal) * k, p: z(v.p) * k, c: z(v.c) * k, f: z(v.f) * k });
+  return { basis, S, qty, grams, v, hasServing: basis === 'serving' && nv('lblServingG') > 0, logged: mk(logK), per100: mk(per100K) };
+}
 
-        // ---------- Remove an entry ----------
-        document.querySelectorAll('.remove-entry').forEach(btn => btn.addEventListener('click', () => {
-            if (!confirm('Remove this food entry?')) return;
-            btn.disabled = true;
-            post('api/delete-food-log.php', { log_id: btn.dataset.logId }).then(d => {
-                if (d.success) location.reload();
-                else { say($('pageMessage'), d.error || 'Could not remove that entry.', 'err'); btn.disabled = false; window.scrollTo({ top: 0, behavior: 'smooth' }); }
-            }).catch(() => { say($('pageMessage'), NET, 'err'); btn.disabled = false; });
-        }));
-    </script>
+function refreshLabel() {
+  const c = labelCalc(), serving = c.basis === 'serving';
+  $('lblServingField').hidden = !serving;
+  $('lblQtyLabel').textContent = serving ? 'Servings you ate' : 'Amount you ate (g)';
+  $('lblHint').textContent = serving && !c.hasServing ? 'No serving size entered, so this is saved as a 100 g portion. Add the serving size in grams for exact numbers.' : '';
+
+  const ok = !isNaN(c.v.cal) && c.qty > 0;
+  $('lpCal').textContent = ok ? Math.round(c.logged.cal) : '-';
+  $('lpProtein').textContent = ok ? round1(c.logged.p) + ' g' : '-';
+  $('lpCarbs').textContent = ok ? round1(c.logged.c) + ' g' : '-';
+  $('lpFat').textContent = ok ? round1(c.logged.f) + ' g' : '-';
+  $('lblSaved').textContent = ok
+    ? 'Saved as ' + round1(c.per100.cal) + ' kcal and ' + round1(c.per100.p) + ' g protein per 100 g. To log it again, search its name and enter ' + round1(serving ? c.S : 100) + ' g for one ' + (serving ? 'serving' : 'portion') + '.'
+    : '';
+}
+$('modeLabel').addEventListener('input', refreshLabel);
+document.querySelectorAll('input[name="lblBasis"]').forEach(r => r.addEventListener('change', () => {
+  $('lblQty').value = basisVal() === 'serving' ? 1 : 100;
+  refreshLabel();
+}));
+
+// ----- Submit -----
+$('addFoodForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  const payload = { meal: $('addFoodMeal').value, log_date: LOG_DATE };
+  const fail = text => { say(modalMsg, text, 'err'); };
+
+  if (mode === 'search') {
+    const grams = parseFloat(foodGrams.value);
+    if (!grams || grams <= 0) return fail('Enter an amount in grams greater than zero.');
+    const existing = foodByName[foodSelect.value.trim().toLowerCase()];
+    if (!existing) return fail('Pick a food from the list, or switch to "New from a label" to add it.');
+    payload.grams = grams;
+    payload.food_id = existing.id;
+  } else {
+    const c = labelCalc(), name = cleanName($('lblName').value);
+    if (!name) return fail('Enter a name for the food.');
+    if (foodByName[name.toLowerCase()]) return fail('A food named "' + name + '" already exists. Pick it under "Search foods", or give this one a different name.');
+    if (isNaN(c.v.cal) || c.v.cal < 0) return fail('Enter the calories from the label.');
+    if ([c.v.p, c.v.c, c.v.f].some(n => !isNaN(n) && n < 0)) return fail('Protein, carbs and fat cannot be negative.');
+    if (!(c.qty > 0)) return fail(c.basis === 'serving' ? 'Enter how many servings you ate.' : 'Enter how many grams you ate.');
+    const grams = round1(c.grams);
+    if (!(grams > 0) || grams > 99999) return fail('That amount is out of range. Check the serving size and amount.');
+    const per = { cal: round2(c.per100.cal), p: round2(c.per100.p), c: round2(c.per100.c), f: round2(c.per100.f) };
+    if ([per.cal, per.p, per.c, per.f].some(n => n > 9999)) return fail('Those numbers are too large for 100 g. Check the serving size.');
+    payload.grams = grams;
+    payload.new_food = { name: name, calories_per_100g: per.cal, protein_per_100g: per.p, carbs_per_100g: per.c, fat_per_100g: per.f };
+  }
+
+  const btn = $('saveFoodBtn'); btn.disabled = true;
+  post('api/log-food.php', payload).then(d => {
+    if (d.success) location.reload();
+    else { say(modalMsg, d.error || 'Could not log that food.', 'err'); btn.disabled = false; }
+  }).catch(() => { say(modalMsg, NET, 'err'); btn.disabled = false; });
+});
+
+// ---------- Remove an entry ----------
+document.querySelectorAll('.remove-entry').forEach(btn => btn.addEventListener('click', () => {
+  if (!confirm('Remove this food entry?')) return;
+  btn.disabled = true;
+  post('api/delete-food-log.php', { log_id: btn.dataset.logId }).then(d => {
+    if (d.success) location.reload();
+    else { say($('pageMessage'), d.error || 'Could not remove that entry.', 'err'); btn.disabled = false; window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  }).catch(() => { say($('pageMessage'), NET, 'err'); btn.disabled = false; });
+}));
+</script>
 </body>
-
 </html>
